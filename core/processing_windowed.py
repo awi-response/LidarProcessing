@@ -35,18 +35,19 @@ def create_chunks_from_wkt(input_wkt, chunk_size=1000, overlap=0.2):
     
     return large_chunks, orig_chunk_size
 
-def process_chunk_to_dsm(input_file, chunk_bbox, temp_dir, resolution):
+def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, resolution):
 
-    chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(chunk_bbox.bounds[0])}_{int(chunk_bbox.bounds[1])}.tif")
+    chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
 
     pipeline = [
         {"type": "readers.las", "filename": input_file},
-        {"type": "filters.crop", "polygon": wkt_dumps(chunk_bbox)},
+        {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
         {
             "type": "filters.range",
             "limits": "Classification[0:0]"  # Use all points for initial DSM
         },
+        {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {
             "type": "writers.gdal",
             "filename": chunk_file,
@@ -69,6 +70,48 @@ def process_chunk_to_dsm(input_file, chunk_bbox, temp_dir, resolution):
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         #print(f"Filled DSM saved (temp): {temp_filled_dsm_path}")
         # Move the gap-filled DSM to the final output folder.
+
+
+def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, fill_gaps=True):
+
+    chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
+
+    pipeline = [
+        {"type": "readers.las", "filename": input_file},
+        {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
+        # Apply the CSF filter to classify ground points.
+        {"type": "filters.csf",
+         "resolution": resolution,  # Adjust based on your dataset
+         "rigidness": rigidness,                  # Typical value; modify if needed
+         "iterations": iterations                # Number of iterations for the simulation
+        },
+        {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
+        # Filter only ground points (assuming CSF sets ground points to classification 2)
+        {"type": "filters.range", "limits": "Classification[2:2]"},
+        {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
+        {"type": "writers.gdal",
+         "filename": chunk_file,
+         "resolution": resolution,
+           "output_type": "mean",
+           "nodata": -9999,
+          "gdalopts": "COMPRESS=LZW"}
+    ]
+            
+    # Run the PDAL pipeline.
+    pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
+            
+        # Fill gaps using GDAL if enabled.
+    if fill_gaps:
+        subprocess.run([
+            "gdal_fillnodata.py",
+            "-md", "10",
+            "-si", "2",
+            chunk_file,
+            chunk_file
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Move the gap-filled DTM to the final output folder.
+
+
 
 
 def merge_chunks(input_files, output_file):
@@ -105,4 +148,4 @@ def merge_chunks(input_files, output_file):
     for src in src_files:
         src.close()
     
-    print(f"Merged raster saved at: {output_file}")
+    #Sprint(f"Merged raster saved at: {output_file}")

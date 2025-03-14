@@ -16,7 +16,7 @@ from shapely.geometry import box
 import multiprocessing
 from shapely.wkt import loads as wkt_loads, dumps as wkt_dumps
 
-from core.processing_windowed import create_chunks_from_wkt, process_chunk_to_dsm, merge_chunks
+from core.processing_windowed import create_chunks_from_wkt, process_chunk_to_dsm, process_chunk_to_dem ,merge_chunks
 
 
 def check_resolution(las_file, resolution, method="sampling", num_samples=10000):
@@ -73,7 +73,7 @@ def get_las_footprint_wkt(las_file):
     footprint = box(min_x, min_y, max_x, max_y)
     return footprint.wkt  # Convert to WKT format
 
-def process_las_file(las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size):
+def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size):
     """Processes a single LAS file: generates DSM chunks, merges them, and fills gaps if needed."""
     
     base_name = os.path.splitext(os.path.basename(las_file))[0]
@@ -90,16 +90,16 @@ def process_las_file(las_file, temp_folder, final_output_folder, resolution, met
     temp_dsm_dir = os.path.join(temp_folder, base_name)
     os.makedirs(temp_dsm_dir, exist_ok=True)
 
-    final_dsm_path = os.path.join(final_output_folder, f"{base_name}_DSM.tif")
+    final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
     
     # Generate overlapping chunks from WKT
-    _, large_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
+    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
 
     dsm_chunks = []
 
     # Local progress bar for chunk processing (each file)
-    for chunk in tqdm(large_chunks, desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
-        chunk_dsm_path = process_chunk_to_dsm(las_file, chunk, temp_dsm_dir, resolution)
+    for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
+        chunk_dsm_path = process_chunk_to_dsm(las_file, large_chunk, small_chunk, temp_dsm_dir, resolution)
         if chunk_dsm_path:
             dsm_chunks.append(chunk_dsm_path)
 
@@ -111,7 +111,7 @@ def process_las_file(las_file, temp_folder, final_output_folder, resolution, met
         
         # Fill gaps if needed
         if fill_gaps and merged_dsm:
-            filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_dsm_filled.tif")
+            filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_filled.tif")
             subprocess.run([
                 "gdal_fillnodata.py",
                 "-md", "10",
@@ -122,7 +122,7 @@ def process_las_file(las_file, temp_folder, final_output_folder, resolution, met
             os.replace(filled_dsm_path, final_dsm_path)
 
     else:
-        print(f"No DSM chunks found for {base_name}. Skipping merge.")
+        print(f"No chunks found for {base_name}. Skipping merge.")
 
     # Cleanup temporary directory
     if os.path.exists(temp_dsm_dir):
@@ -163,7 +163,7 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
             with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
                 async_results = [
                     pool.apply_async(
-                        process_las_file, 
+                        process_las_file_dsm, 
                         (las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size)
                     ) for las_file in las_files
                 ]
@@ -182,30 +182,79 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
     print(f"\nDSM generation completed in {elapsed_time}.")
 
 
-def generate_dtm(input_folder, output_folder, run_name, method, rigidness, iterations, resolution, fill_gaps=True):
-    """
-    Generates a DTM from LAS/LAZ files using the cloth simulation filtering (CSF) method.
+def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, counter, chunk_size):
+    """Processes a single LAS file: generates DTM chunks, merges them, and fills gaps if needed."""
+    base_name = os.path.splitext(os.path.basename(las_file))[0]
     
-    Parameters:
-        input_folder (str): The base folder containing input point cloud files.
-        output_folder (str): The folder where the output will be saved.
-        run_name (str): The subfolder (or run identifier) within input_folder.
-        method (str): The ground filtering method to use (e.g., 'cloth').
-        resolution (float): The output grid resolution in meters.
-        fill_gaps (bool): Whether to run gap-filling on the output DTM.
-    """
-    # Define the final output folder and ensure it exists.
+    # Generate WKT footprint from the LAS file
+    target_wkt = get_las_footprint_wkt(las_file)
+
+    avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
+    if not is_resolution_ok:
+        print(f"Warning: DTM resolution ({resolution}m) is finer than average point spacing ({avg_spacing:.3f}m).")
+        print("   Consider increasing the resolution to avoid interpolation gaps.")
+    
+    # Create a temporary directory for DTM chunks
+    temp_dtm_dir = os.path.join(temp_folder, base_name)
+    os.makedirs(temp_dtm_dir, exist_ok=True)
+
+    final_dtm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+    
+    # Generate overlapping chunks from WKT
+    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
+    
+    dtm_chunks = []
+    
+    # Process each chunk
+    for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
+        chunk_dtm_path = process_chunk_to_dem(las_file, large_chunk, small_chunk, temp_dtm_dir, rigidness, iterations, resolution, fill_gaps)
+        if chunk_dtm_path:
+            dtm_chunks.append(chunk_dtm_path)
+    
+    # Merge chunks into a single DTM
+    # Merge chunks into a single DSM
+    if temp_dtm_dir:
+        chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
+
+        merged_dsm = merge_chunks(chunk_files, final_dtm_path)
+        
+        # Fill gaps if needed
+        if fill_gaps and merged_dsm:
+            filled_dsm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
+            subprocess.run([
+                "gdal_fillnodata.py",
+                "-md", "10",
+                "-si", "2",
+                merged_dsm,
+                filled_dsm_path
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.replace(filled_dsm_path, final_dtm_path)
+
+    else:
+        print(f"No chunks found for {base_name}. Skipping merge.")
+
+    # Cleanup temporary directory
+    if os.path.exists(temp_dtm_dir):
+        shutil.rmtree(temp_dtm_dir, ignore_errors=True)
+
+    # Increment the counter (safe in multiprocessing)
+    counter.value += 1
+
+    return final_dtm_path
+
+def generate_dtm(input_folder, output_folder, run_name, method, rigidness, iterations, resolution, chunk_size, fill_gaps=True):
+    """Parallelized DTM generation for all LAS files in a folder."""
+    
+    # Ensure final output folders exist
     final_output_folder = os.path.join(output_folder, run_name, 'DTM')
     os.makedirs(final_output_folder, exist_ok=True)
     
-    # Create a temporary folder for intermediate outputs.
     temp_folder = os.path.join(final_output_folder, "temp")
     os.makedirs(temp_folder, exist_ok=True)
     
-    print("\nStarting DTM generation")
     start_time = time.time()
     
-    # Collect all LAS/LAZ files.
+    # Find all LAS/LAZ files
     las_files = glob.glob(os.path.join(input_folder, run_name, "*.las")) + \
                 glob.glob(os.path.join(input_folder, run_name, "*.laz"))
     
@@ -213,61 +262,29 @@ def generate_dtm(input_folder, output_folder, run_name, method, rigidness, itera
         print("No LAS/LAZ files found. Exiting DTM generation.")
         return
     
-    for las_file in tqdm(las_files, desc="Processing DTMs", unit="file"):
-        try:
-            base_name = os.path.splitext(os.path.basename(las_file))[0]
-            # Temporary DTM paths.
-            temp_DTM_path = os.path.join(temp_folder, f"{base_name}_DTM.tif")
-            temp_filled_DTM_path = os.path.join(temp_folder, f"{base_name}_DTM_filled.tif")
-            # Final DTM will be saved directly in the final output folder.
-            final_DTM_path = os.path.join(final_output_folder, f"{base_name}_DTM.tif")
-
-            avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
-            resolution = avg_spacing
-            # Define the PDAL pipeline using the cloth simulation filter.
-            pipeline = [
-                {"type": "readers.las", "filename": las_file},
-                # Apply the CSF filter to classify ground points.
-                {"type": "filters.csf",
-                 "resolution": resolution,  # Adjust based on your dataset
-                 "rigidness": rigidness,                  # Typical value; modify if needed
-                 "iterations": iterations                # Number of iterations for the simulation
-                },
-                {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
-                # Filter only ground points (assuming CSF sets ground points to classification 2)
-                {"type": "filters.range", "limits": "Classification[2:2]"},
-                {"type": "writers.gdal",
-                 "filename": temp_DTM_path,
-                 "resolution": resolution,
-                 "output_type": "mean",
-                 "nodata": -9999,
-                 "gdalopts": "COMPRESS=LZW"}
-            ]
-            
-            # Run the PDAL pipeline.
-            pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
-            
-            # Fill gaps using GDAL if enabled.
-            if fill_gaps:
-                subprocess.run([
-                    "gdal_fillnodata.py",
-                    "-md", "10",
-                    "-si", "2",
-                    temp_DTM_path,
-                    temp_filled_DTM_path
-                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                # Move the gap-filled DTM to the final output folder.
-                os.replace(temp_filled_DTM_path, final_DTM_path)
-            else:
-                # Move the initial DTM.
-                os.rename(temp_DTM_path, final_DTM_path)
+    # Use multiprocessing Manager to create a shared counter
+    with multiprocessing.Manager() as manager:
+        counter = manager.Value('i', 0)  # Shared integer counter
+        
+        # Progress bar in the main process
+        with tqdm(total=len(las_files), desc="Processing LAS Files", unit="file") as progress_bar:
+            with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+                async_results = [
+                    pool.apply_async(
+                        process_las_file_dem, 
+                        (las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, counter, chunk_size)
+                    ) for las_file in las_files
+                ]
                 
-        except Exception as e:
-            print(f"Error processing {las_file}: {e}")
-    
-    # Clean up the temporary folder after processing.
-    if os.path.exists(temp_folder):
-        shutil.rmtree(temp_folder)
+                # Update progress bar dynamically
+                while counter.value < len(las_files):
+                    progress_bar.n = counter.value
+                    progress_bar.refresh()
+                    time.sleep(1)  # Small delay to prevent excessive updates
+                
+                # Wait for all processes to finish
+                for result in async_results:
+                    result.get()
     
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nDTM generation completed in {elapsed_time}.")
@@ -384,6 +401,7 @@ def process_all(config):
             output_folder=config.results_dir,
             run_name=config.run_name,
             resolution=config.resolution,
+            chunk_size=config.chunk_size,
             fill_gaps=config.fill_gaps,
             method=config.point_density_method, 
             rigidness = config.rigidness,

@@ -34,14 +34,14 @@ class Configuration:
 
         # SOR parameters
         self.overlap = 0.2  # minimum overlap between pointcloud and AOI, 0.5 means 50% overlap
-        self.knn = 100  # number of k nearest neighbors, the higher hte more stable
-        self.multiplier = 20 # Determines the threshold for outlier rejection, the higher the more conservative
+        self.knn = 100  # number of k nearest neighbors, the higher the more stable
+        self.multiplier = 2.2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
 
         # ------- PROCESSING --------
 
         self.create_DSM = True
-        self.create_DEM = False
-        self.create_CHM = False
+        self.create_DEM = True
+        self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
         self.resolution = 1 # resoltion of generated rasters in meter, can be 'Auto' or number
