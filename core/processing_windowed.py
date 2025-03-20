@@ -47,15 +47,15 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
             "type": "filters.range",
             "limits": "Classification[0:0]"  # Use all points for initial DSM
         },
-        {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {
-            "type": "writers.gdal",
-            "filename": chunk_file,
-            "resolution": resolution,
-            "output_type": "max",
-            "nodata": -9999,
-            "gdalopts": "COMPRESS=LZW"
-                }
+         "type": "writers.gdal",
+         "filename": chunk_file,
+         "resolution": resolution,
+         "output_type": "max",
+         "nodata": -9999,
+         "gdalopts": "COMPRESS=LZW",
+         "bounds": wkt_dumps(small_chunk_bbox)
+        }
             ]
             
             # Run PDAL pipeline.
@@ -88,13 +88,13 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
         # Filter only ground points (assuming CSF sets ground points to classification 2)
         {"type": "filters.range", "limits": "Classification[2:2]"},
-        {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {"type": "writers.gdal",
          "filename": chunk_file,
          "resolution": resolution,
-           "output_type": "mean",
-           "nodata": -9999,
-          "gdalopts": "COMPRESS=LZW"}
+         "output_type": "mean",
+         "nodata": -9999,
+         "gdalopts": "COMPRESS=LZW",
+         "bounds": wkt_dumps(small_chunk_bbox)}
     ]
             
     # Run the PDAL pipeline.

@@ -81,7 +81,7 @@ def process_chunk_wrapper(args):
     return process_chunk(*args)
 
 
-def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir, sor_knn, sor_multiplier, chunk_size=1000):
+def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir, sor_knn, sor_multiplier, num_workers, chunk_size=1000):
     """
     Processes LAS files by splitting them into chunks, applying SOR filtering, merging the results,
     and cropping them to the target area's boundary. Also ensures LAS files and target geometries are in UTM projection.
@@ -131,7 +131,7 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
 
         # Parallel processing of chunks
         with tqdm(total=len(process_args), desc=f"Processing {target_fp}", unit="chunk") as pbar:
-            with Pool(processes=4) as pool:  # Adjust workers as needed
+            with Pool(processes=num_workers) as pool:  # Adjust workers as needed
                 for processed_chunk in pool.imap_unordered(process_chunk_wrapper, process_args):
                     if processed_chunk:
                         processed_chunks.append(processed_chunk)
@@ -188,6 +188,7 @@ def preprocess_all(conf):
         preprocessed_dir=config.preprocessed_dir, 
         sor_knn=config.knn,  # Adjust based on density
         sor_multiplier=config.multiplier,  # Adjust based on noise level
+        num_workers=config.num_workers,
         run_name=run_name,
         chunk_size=config.chunk_size
         
