@@ -7,7 +7,37 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import geopandas as gpd
+import shapely
 import matplotlib.pyplot as plt
+from rasterio.features import shapes
+from shapely.geometry import shape
+from geopandas import GeoDataFrame
+
+def valid_data_raster_to_vector(raster_mask, crs, transform):
+    # Create shapes from raster mask
+    shapes_list = []
+    values = []
+    
+    # Convert GeoJSON coordinates to Shapely shapes
+    for geom_dict, val in shapes(raster_mask, transform=transform):
+        # Convert GeoJSON dictionary to Shapely shape
+        shape_obj = shapely.geometry.shape(geom_dict)
+        shapes_list.append(shape_obj)
+        values.append(val)
+    
+    # Create GeoDataFrame with explicit geometry column
+    gdf = gpd.GeoDataFrame(
+        {"geometry": shapes_list, "class": values},
+        geometry="geometry",  # Explicitly set active geometry column
+        crs=crs
+    )
+
+    # Filter for class 255 (valid data)
+    gdf = gdf[gdf["class"] == 255]
+    
+
+    return gdf
+
 
 def raster_to_points(val_dir: str, val_band: int, num_points: int) -> gpd.GeoDataFrame:
     """
@@ -24,7 +54,7 @@ def raster_to_points(val_dir: str, val_band: int, num_points: int) -> gpd.GeoDat
     """
     final_gdf = gpd.GeoDataFrame()
     raster_files = [f for f in os.listdir(val_dir) if f.endswith(('.tif', '.jp2'))]
-    points_per_raster = num_points // len(raster_files)
+    points_per_raster = num_points
     
     for raster_file in raster_files:
         full_path = os.path.join(val_dir, raster_file)
@@ -33,29 +63,49 @@ def raster_to_points(val_dir: str, val_band: int, num_points: int) -> gpd.GeoDat
         try:
             with rasterio.open(full_path) as src:
                 val_band_array = src.read(val_band)
+                raster_mask = src.read_masks(1)
+                transform = src.transform
                 raster_bounds = src.bounds
+                print(f'Raster bounds: {raster_bounds}')
                 raster_crs = src.crs
                 no_data = src.nodata
                 
+                valid_bounds = valid_data_raster_to_vector(raster_mask, raster_crs, transform)
+                raster_bounds = valid_bounds.total_bounds
+
+
+
                 # Generate points within bounds
-                x_coords = np.random.uniform(raster_bounds[0], raster_bounds[2], points_per_raster)
-                y_coords = np.random.uniform(raster_bounds[1], raster_bounds[3], points_per_raster)
+                x_coords = np.random.uniform(raster_bounds[0], raster_bounds[2], points_per_raster*2)
+                y_coords = np.random.uniform(raster_bounds[1], raster_bounds[3], points_per_raster*2)
                 points = np.column_stack((x_coords, y_coords))
+
+                print(f'Generated {len(points)} points')
                 
                 # Create GeoDataFrame with source CRS
                 gdf = gpd.GeoDataFrame(
                     geometry=gpd.points_from_xy(points[:, 0], points[:, 1]),
                     crs=raster_crs
                 )
+
+                #remove points outside of valid bounds polygons
+                gdf = gpd.sjoin(gdf, valid_bounds, how='inner', predicate='within')
+                print(f'Kept {len(gdf)} points within valid bounds')
                 
                 # Sample raster values
                 gdf['val_value'] = _sample_raster_at_points(gdf, val_band_array, src.transform)
                 gdf = gdf[gdf['val_value'] != no_data]
+                print(f'Kept {len(gdf)} points with valid raster values')
                 
                 # Transform to WGS84 for consistent CRS
                 gdf = gdf.to_crs("EPSG:4326")
                 
                 final_gdf = gpd.pd.concat([final_gdf, gdf], ignore_index=True)
+
+                # remove oversamples features
+                gdf = gdf.sample(n=num_points, random_state=42)
+                gdf = gdf.reset_index(drop=True)
+                print(f'Final number of points: {len(gdf)}')
 
                 final_gdf.to_file(os.path.join(val_dir, 'validation_points.shp'))
                 
@@ -117,6 +167,10 @@ def get_dem_value(preprocessed_dir: str, val_gdf: gpd.GeoDataFrame, run_name: st
                 # Sample values and filter
                 gdf['dem_value'] = _sample_raster_at_points(gdf, val_band_array, src.transform)
                 gdf = gdf[gdf['dem_value'] != no_data]
+
+                #print('TEST TEST TEST')
+                #add random noise to dem values
+                #gdf['dem_value'] = gdf['dem_value'] + np.random.normal(0, 0.1, len(gdf))
 
                 # Add raster name column BEFORE concat
                 gdf['raster_name'] = raster_file
