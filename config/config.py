@@ -54,8 +54,8 @@ class Configuration:
         # ------ VALIDATION ------
 
         self.data_type = 'raster'   # Type of validation data, can be 'raster' or 'vector'
-        self.validation_target = 'surface' # meanurement to validate, can be 'surface' for highest pount (DSM), ground for lowest point (DEM) or 'vegetation' for vegetation height (CHM)
-        self.val_column_point = 'test' # column in point validation data to use for comparison
+        self.validation_target = 'DSM' # product to validate, can be 'DSM', 'DEM' or 'CHM', select validation data accordingly! (DSM: higest point, DEM: ground level, CHM: height of vegetation)
+        self.val_column_point = 'val_value' # column in point validation data to use for comparison
         self.val_band_raster = 1
         self.sample_size = 100 # number of points to sample for validation
 
