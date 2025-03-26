@@ -10,6 +10,7 @@ import json
 import subprocess
 from shapely.geometry import box, shape
 from shapely.wkt import loads as wkt_loads, dumps as wkt_dumps
+from shapely.prepared import prep
 
 def create_chunks_from_wkt(input_wkt, chunk_size=1000, overlap=0.2):
     """
@@ -18,20 +19,21 @@ def create_chunks_from_wkt(input_wkt, chunk_size=1000, overlap=0.2):
     """
 
     geom= wkt_loads(input_wkt)
+    geom = prep(geom)
     min_x, min_y, max_x, max_y = geom.bounds
-    large_chunks = []
-    orig_chunk_size = []
 
     enlarged_chunk_size = chunk_size * (1 + overlap)
     half_extra = (enlarged_chunk_size - chunk_size) / 2
 
-    for x in np.arange(min_x, max_x, chunk_size):
-        for y in np.arange(min_y, max_y, chunk_size):
-            large_chunk_bbox = box(x - half_extra, y - half_extra, x + enlarged_chunk_size - half_extra, y + enlarged_chunk_size - half_extra)
-            orig_chunk_box = box(x, y, x + chunk_size, y + chunk_size)
-            if geom.intersects(orig_chunk_box):
-                large_chunks.append(large_chunk_bbox)
-                orig_chunk_size.append(orig_chunk_box)
+    large_chunks, orig_chunk_size = zip(*[
+        (
+            box(x - half_extra, y - half_extra, x + enlarged_chunk_size - half_extra, y + enlarged_chunk_size - half_extra),
+            box(x, y, x + chunk_size, y + chunk_size)
+        )
+        for x in np.arange(min_x, max_x, chunk_size)
+        for y in np.arange(min_y, max_y, chunk_size)
+        if geom.intersects(box(x, y, x + chunk_size, y + chunk_size))
+    ])
     
     return large_chunks, orig_chunk_size
 

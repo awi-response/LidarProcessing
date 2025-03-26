@@ -11,6 +11,7 @@ from datetime import timedelta
 from tqdm import tqdm
 from scipy.spatial import KDTree
 import rasterio
+from multiprocessing import Pool
 import shutil
 from shapely.geometry import box
 import multiprocessing
@@ -73,36 +74,38 @@ class PointCloudProcessor:
 
     def _process_chunk(self, chunk_data):
         """Process a single chunk."""
-        las_file, temp_dir, output_folder, resolution, method, fill_gaps, counter, chunk_size = chunk_data
-        
+        las_file, temp_dir, output_folder, resolution, method, fill_gaps, counter, chunk_size, num_workers = chunk_data
+
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         target_wkt = self.get_las_footprint_wkt(las_file)
-        
+
         if not target_wkt:
             return None
-            
+
         avg_spacing, is_resolution_ok = self.check_resolution(las_file, resolution, method)
         if not is_resolution_ok:
             print(f"Warning: Resolution ({resolution}m) is finer than average spacing ({avg_spacing:.3f}m)")
-            
+
         temp_dsm_dir = Path(temp_dir) / base_name
         os.makedirs(temp_dsm_dir, exist_ok=True)
         self.temp_dirs.add(temp_dsm_dir)
-        
+
         final_dsm_path = Path(output_folder) / f"{base_name}.tif"
         large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
-        
-        dsm_chunks = []
-        for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), 
-                                           desc=f"Processing Chunks ({base_name})", 
-                                           unit="chunk", leave=False):
-            chunk_dsm_path = process_chunk_to_dsm(las_file, large_chunk, small_chunk, temp_dsm_dir, resolution)
-            if chunk_dsm_path:
-                dsm_chunks.append(chunk_dsm_path)
-                
+
+        from multiprocessing import Pool
+        with Pool(processes=num_workers) as chunk_pool:
+            dsm_chunks = chunk_pool.starmap(
+                process_chunk_to_dsm,
+                [(las_file, lc, sc, temp_dsm_dir, resolution)
+                for lc, sc in zip(large_chunks, small_chunks)]
+            )
+
+        dsm_chunks = [dsm for dsm in dsm_chunks if dsm]
+
         if dsm_chunks:
             merged_dsm = merge_chunks(dsm_chunks, final_dsm_path)
-            
+
             if fill_gaps and merged_dsm:
                 filled_dsm_path = temp_dsm_dir / f"{base_name}_filled.tif"
                 subprocess.run([
@@ -113,83 +116,72 @@ class PointCloudProcessor:
                     str(filled_dsm_path)
                 ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 os.replace(filled_dsm_path, final_dsm_path)
-                
+
         counter.value += 1
         return final_dsm_path
 
     def generate_dsm(self, input_folder: str, output_folder: str, run_name: str, 
-                     resolution: float, chunk_size: int, num_workers: int, 
-                     fill_gaps: bool = True, method: str = "sampling"):
+                    resolution: float, chunk_size: int, num_workers: int, 
+                    fill_gaps: bool = True, method: str = "sampling"):
         """Generate DSM for all LAS files in folder."""
         final_output_folder = Path(output_folder) / run_name / "DSM"
         temp_folder = final_output_folder / "temp"
         final_output_folder.mkdir(parents=True, exist_ok=True)
         temp_folder.mkdir(exist_ok=True)
-        
+
         las_files = glob.glob(str(Path(input_folder) / run_name / "*.las")) + \
-                   glob.glob(str(Path(input_folder) / run_name / "*.laz"))
-        
+                    glob.glob(str(Path(input_folder) / run_name / "*.laz"))
+
         if not las_files:
             print("No LAS/LAZ files found. Exiting DSM generation.")
             return
-            
+
         counter = multiprocessing.Value('i', 0)
         chunk_data = [(las_file, str(temp_folder), str(final_output_folder), resolution, 
-                      method, fill_gaps, counter, chunk_size) 
-                      for las_file in las_files]
-        
+                    method, fill_gaps, counter, chunk_size, num_workers) 
+                    for las_file in las_files]
+
         with multiprocessing.Pool(processes=num_workers) as pool:
-            with tqdm(total=len(las_files), desc="Processing LAS Files", unit="file") as progress_bar:
-                async_results = [pool.apply_async(self._process_chunk, args=(data,))
-                               for data in chunk_data]
-                
-                while counter.value < len(las_files):
-                    progress_bar.n = counter.value
-                    progress_bar.refresh()
-                    time.sleep(1)
+            with tqdm(total=len(chunk_data), desc="Processing LAS Files", unit="file") as progress_bar:
+                for _ in pool.imap_unordered(self._process_chunk, chunk_data):
+                    with counter.get_lock():
+                        counter.value += 1
+                    progress_bar.update(1)
                     
-                for result in async_results:
-                    result.get()
 
     def generate_dtm(self, input_folder: str, output_folder: str, run_name: str, 
-                     resolution: float, chunk_size: int, num_workers: int, 
-                     fill_gaps: bool = True, method: str = "sampling", 
-                     rigidness: float = 1.0, iterations: int = 3):
+                    resolution: float, chunk_size: int, num_workers: int, 
+                    fill_gaps: bool = True, method: str = "sampling", 
+                    rigidness: float = 1.0, iterations: int = 3):
         """Generate DTM for all LAS files in folder."""
         final_output_folder = Path(output_folder) / run_name / "DTM"
         temp_folder = final_output_folder / "temp"
         final_output_folder.mkdir(parents=True, exist_ok=True)
         temp_folder.mkdir(exist_ok=True)
-        
+
         las_files = glob.glob(str(Path(input_folder) / run_name / "*.las")) + \
-                   glob.glob(str(Path(input_folder) / run_name / "*.laz"))
-        
+                    glob.glob(str(Path(input_folder) / run_name / "*.laz"))
+
         if not las_files:
             print("No LAS/LAZ files found. Exiting DTM generation.")
             return
-            
+
         counter = multiprocessing.Value('i', 0)
         chunk_data = [(las_file, str(temp_folder), str(final_output_folder), resolution, 
-                      method, rigidness, iterations, fill_gaps, counter, chunk_size) 
-                      for las_file in las_files]
-        
+                    method, rigidness, iterations, fill_gaps, counter, chunk_size, num_workers) 
+                    for las_file in las_files]
+
         with multiprocessing.Pool(processes=num_workers) as pool:
-            with tqdm(total=len(las_files), desc="Processing LAS Files", unit="file") as progress_bar:
-                async_results = [pool.apply_async(self._process_chunk_dtm, args=(data,))
-                               for data in chunk_data]
-                
-                while counter.value < len(las_files):
-                    progress_bar.n = counter.value
-                    progress_bar.refresh()
-                    time.sleep(1)
-                    
-                for result in async_results:
-                    result.get()
+            with tqdm(total=len(chunk_data), desc="Processing LAS Files", unit="file") as progress_bar:
+                for _ in pool.imap_unordered(self._process_chunk_dtm, chunk_data):
+                    with counter.get_lock():
+                        counter.value += 1
+                    progress_bar.update(1)
 
     def _process_chunk_dtm(self, chunk_data):
         """Process a single chunk for DTM generation."""
         las_file, temp_dir, output_folder, resolution, method, rigidness, iterations, \
-            fill_gaps, counter, chunk_size = chunk_data
+            fill_gaps, counter, chunk_size, num_workers = chunk_data
         
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         target_wkt = self.get_las_footprint_wkt(las_file)
@@ -208,15 +200,15 @@ class PointCloudProcessor:
         final_dtm_path = Path(output_folder) / f"{base_name}.tif"
         large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
         
-        dtm_chunks = []
-        for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), 
-                                           desc=f"Processing Chunks ({base_name})", 
-                                           unit="chunk", leave=False):
-            chunk_dtm_path = process_chunk_to_dem(las_file, large_chunk, small_chunk, 
-                                                temp_dtm_dir, rigidness, iterations, 
-                                                resolution, fill_gaps)
-            if chunk_dtm_path:
-                dtm_chunks.append(chunk_dtm_path)
+        with Pool(processes=num_workers) as chunk_pool:
+            dtm_chunks = chunk_pool.starmap(
+                process_chunk_to_dem,
+                [(las_file, lc, sc, temp_dtm_dir, rigidness, iterations, resolution, fill_gaps)
+                for lc, sc in zip(large_chunks, small_chunks)]
+            )
+
+        # Filter out None values (if any)
+        dtm_chunks = [dtm for dtm in dtm_chunks if dtm]
                 
         if dtm_chunks:
             merged_dtm = merge_chunks(dtm_chunks, final_dtm_path)

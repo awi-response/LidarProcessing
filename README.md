@@ -31,6 +31,8 @@ Configuration settings are stored in `/config/` and are initialized in `main.py`
   - User-defined pixel subsets or complete rasters.  
 - Evaluates ground, surface, and vegetation height.  
 
+![LiDAR Processing Workflow](lidarprocessing_workflow.png)
+
 For efficiency, point clouds are split into **smaller chunks** and processed in **parallel**.  
 
 ## **Setup**  
