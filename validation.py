@@ -19,97 +19,51 @@ from datetime import timedelta
 
 from core.utils import save_validation_report
 
-def valid_data_raster_to_vector(raster_mask, crs, transform):
-    # Create shapes from raster mask
-    shapes_list = []
-    values = []
-    
-    # Convert GeoJSON coordinates to Shapely shapes
-    for geom_dict, val in shapes(raster_mask, transform=transform):
-        # Convert GeoJSON dictionary to Shapely shape
-        shape_obj = shapely.geometry.shape(geom_dict)
-        shapes_list.append(shape_obj)
-        values.append(val)
-    
-    # Create GeoDataFrame with explicit geometry column
-    gdf = gpd.GeoDataFrame(
-        {"geometry": shapes_list, "class": values},
-        geometry="geometry",  # Explicitly set active geometry column
-        crs=crs
-    )
-
-    # Filter for class 255 (valid data)
-    gdf = gdf[gdf["class"] == 255]
-    
-
-    return gdf
 
 
-def raster_to_points(val_dir: str, val_band: int, num_points: int) -> gpd.GeoDataFrame:
-    """
-    Convert raster files to points with associated raster values.
-    Handles multiple UTM zones by transforming all geometries to WGS84.
-    
-    Args:
-        val_dir (str): Directory containing raster files
-        val_band (int): Band number to sample from
-        num_points (int): Total number of points to generate across all rasters
-        
-    Returns:
-        gpd.GeoDataFrame: GeoDataFrame containing points and their raster values
-    """
+def raster_to_points(val_dir: str, val_band: int, num_points: int, target_dir: str) -> gpd.GeoDataFrame:
+
     final_gdf = gpd.GeoDataFrame()
     raster_files = [f for f in os.listdir(val_dir) if f.endswith(('.tif', '.jp2'))]
-    points_per_raster = num_points
+    target_areas = [f for f in os.listdir(target_dir) if f.endswith(('.shp', '.gpkg'))]
+    number_of_targets = len(target_areas)
+
+    for target_area in target_areas:
+        full_path = os.path.join(target_dir, target_area)
+
+        target_area_bounds = gpd.read_file(full_path).total_bounds
+        target_area_crs = gpd.read_file(full_path).crs
+        x_coords = np.random.uniform(target_area_bounds[0], target_area_bounds[2], num_points*10)
+        y_coords = np.random.uniform(target_area_bounds[1], target_area_bounds[3], num_points*10)
+        points = np.column_stack((x_coords, y_coords))
+
+        gdf = gpd.GeoDataFrame(
+            geometry=gpd.points_from_xy(points[:, 0], points[:, 1]),
+            crs= target_area_crs
+        )
     
-    for raster_file in raster_files:
-        full_path = os.path.join(val_dir, raster_file)
-        
-        try:
-            with rasterio.open(full_path) as src:
-                val_band_array = src.read(val_band)
-                raster_mask = src.read_masks(1)
-                transform = src.transform
-                raster_bounds = src.bounds
-                raster_crs = src.crs
-                no_data = src.nodata
-                
-                valid_bounds = valid_data_raster_to_vector(raster_mask, raster_crs, transform)
-                raster_bounds = valid_bounds.total_bounds
-
-
-
-                # Generate points within bounds
-                x_coords = np.random.uniform(raster_bounds[0], raster_bounds[2], points_per_raster*2)
-                y_coords = np.random.uniform(raster_bounds[1], raster_bounds[3], points_per_raster*2)
-                points = np.column_stack((x_coords, y_coords))
-                
-                # Create GeoDataFrame with source CRS
-                gdf = gpd.GeoDataFrame(
-                    geometry=gpd.points_from_xy(points[:, 0], points[:, 1]),
-                    crs=raster_crs
-                )
-
-                #remove points outside of valid bounds polygons
-                gdf = gpd.sjoin(gdf, valid_bounds, how='inner', predicate='within')
-                
-                # Sample raster values
-                gdf['val_value'] = _sample_raster_at_points(gdf, val_band_array, src.transform)
-                gdf = gdf[gdf['val_value'] != no_data]
-                
-                # Transform to WGS84 for consistent CRS
-                gdf = gdf.to_crs("EPSG:4326")
-                
-                final_gdf = gpd.pd.concat([final_gdf, gdf], ignore_index=True)
-
-                # remove oversamples features
-                gdf = gdf.sample(n=num_points, random_state=42)
-                gdf = gdf.reset_index(drop=True)
-                
-        except Exception as e:
-            print(f'Error processing {raster_file}: {str(e)}')
-            continue
+        for raster_file in raster_files:
+            full_path = os.path.join(val_dir, raster_file)
             
+            try:
+                with rasterio.open(full_path) as src:
+                    val_band_array = src.read(val_band)
+                    no_data = src.nodata
+                    
+                    # Sample raster values
+                    gdf['val_value'] = _sample_raster_at_points(gdf, val_band_array, src.transform)
+                    gdf = gdf[gdf['val_value'] != no_data]
+                    gdf.reset_index(drop=True, inplace=True)
+                    
+            except Exception as e:
+                print(f'Error processing {raster_file}: {str(e)}')
+                continue
+            
+
+
+        gdf = gdf.to_crs("EPSG:4326")
+        final_gdf = gpd.pd.concat([final_gdf, gdf], ignore_index=True)
+
     return final_gdf
 
 def _sample_raster_at_points(gdf: gpd.GeoDataFrame, raster_array: np.ndarray, transform: rasterio.Affine) -> np.ndarray:
@@ -164,10 +118,7 @@ def get_dem_value(preprocessed_dir: str, validation_target, val_gdf: gpd.GeoData
                 # Sample values and filter
                 gdf['dem_value'] = _sample_raster_at_points(gdf, val_band_array, src.transform)
                 gdf = gdf[gdf['dem_value'] != no_data]
-
-                #print('TEST TEST TEST')
-                #add random noise to dem values
-                gdf['dem_value'] = gdf['dem_value'] + np.random.normal(0, 0.1, len(gdf))
+                gdf.reset_index(drop=True)
 
                 # Add raster name column BEFORE concat
                 gdf['raster_name'] = raster_file
@@ -204,6 +155,8 @@ def compute_error_metrics(
         }
     """
     df = gdf[[reference_col, prediction_col, 'raster_name']].dropna()
+    print(f"Total points: {len(df)}")
+    print(f"df: {df}")
     residuals = df[prediction_col] - df[reference_col]
     abs_residuals = np.abs(residuals)
 
@@ -309,7 +262,7 @@ def validate_all(conf):
 
     if config.data_type == 'raster':
         print("\n--- Converting Raster to Points ---")
-        output = raster_to_points(config.validation_dir, config.val_band_raster, config.sample_size)
+        output = raster_to_points(config.validation_dir, config.val_band_raster, config.sample_size, config.target_area_dir)
         config.val_column_point = 'val_value'
         print(f"Raster-to-point conversion complete. Sampled {len(output)} points.")
 

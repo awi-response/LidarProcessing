@@ -24,7 +24,7 @@ Configuration settings are stored in `/config/` and are initialized in `main.py`
   - **Canopy Height Models (CHM)**  
 - Outputs are saved as **GeoTIFFs**.  
 
-### **3. Validation** *(in progress)*  
+### **3. Validation** 
 - Evaluates the generated models.  
 - Compares against:  
   - **Single points** or **entire raster datasets**.  

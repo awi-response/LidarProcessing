@@ -61,7 +61,7 @@ class Configuration:
 
 
         # ------ ADVANCED SETTINGS ------
-        self.chunk_size = 100 # Number of points to process in each chunk
+        self.chunk_size = 1000 # chunk in meters
         self.num_workers = 4  # Number of parallel workers for processing
 
         # Set overall GDAL settings
