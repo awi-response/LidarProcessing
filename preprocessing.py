@@ -3,6 +3,7 @@ import time
 import json
 import shutil
 from datetime import timedelta
+from datetime import datetime
 from multiprocessing import Pool
 
 import pdal
@@ -33,7 +34,7 @@ def process_chunk_wrapper(args):
     return process_chunk(*args)
 
 
-def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, threshold=0.5):
+def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, threshold=0.5, filter_date=True, start_date=None, end_date=None):
     os.makedirs(las_footprint_dir, exist_ok=True)
 
     print("\nMatching Lidar footprints...")
@@ -75,6 +76,30 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
                     las_path = os.path.join(las_file_dir, las_name)
 
                     if os.path.exists(las_path):
+                        if filter_date and (start_date or end_date):
+
+                            if isinstance(start_date, str):
+                                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+
+                            if isinstance(end_date, str):
+                                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+                            try:
+                                las_file = laspy.read(las_path)
+                                las_date = las_file.header.creation_date
+
+                                print(f"{las_file} Creation date: {las_date}")
+                                if las_date:
+                                    if start_date and las_date < start_date:
+                                        continue
+                                    if end_date and las_date > end_date:
+                                        continue
+                                else:
+                                    continue  # Skip if no creation date
+                            except Exception as e:
+                                print(f"Failed to read LAS header from {las_path}: {e}")
+                                continue
+
                         las_paths.append(las_path)
 
         target_dict[target_name] = las_paths
@@ -84,8 +109,8 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
     return target_dict
 
 
-def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir,
-                        sor_knn, sor_multiplier, num_workers, chunk_size=1000):
+def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir, sor_knn, sor_multiplier, num_workers, chunk_size=1000):
+
     run_merged_dir = os.path.join(preprocessed_dir, run_name)
     os.makedirs(run_merged_dir, exist_ok=True)
 
@@ -182,7 +207,10 @@ def preprocess_all(conf):
         target_footprint_dir=config.target_area_dir,
         las_footprint_dir=config.las_footprints_dir,
         las_file_dir=config.las_files_dir,
-        threshold=config.overlap
+        threshold=config.overlap,
+        filter_date=config.filter_date,
+        start_date=config.start_date,
+        end_date=config.end_date
     )
 
     print("\n--- Merging and Cleaning LAS files ---")
