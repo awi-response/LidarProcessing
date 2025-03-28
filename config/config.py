@@ -31,10 +31,9 @@ class Configuration:
         # ------ PREPROCESSING ------
 
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
-        self.target_name_field = 'name'  # Field in target area gdf to use as target name
+        self.target_name_field = 'layer'  # Field in target area gdf to use as target name
 
         # SOR parameters
-        self.overlap = 0.2  # minimum overlap between pointcloud and AOI, 0.5 means 50% overlap
         self.knn = 100  # number of k nearest neighbors, the higher the more stable
         self.multiplier = 2.2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
 
@@ -42,7 +41,7 @@ class Configuration:
 
         self.create_DSM = True
         self.create_DEM = True
-        self.create_CHM = False
+        self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
         self.resolution = 1 # resoltion of generated rasters in meter, can be 'Auto' or number
@@ -53,7 +52,7 @@ class Configuration:
 
         # ------ VALIDATION ------
 
-        self.data_type = 'raster'   # Type of validation data, can be 'raster' or 'vector'
+        self.data_type = 'vector'   # Type of validation data, can be 'raster' or 'vector' (points)
         self.validation_target = 'DSM' # product to validate, can be 'DSM', 'DEM' or 'CHM', select validation data accordingly! (DSM: higest point, DEM: ground level, CHM: height of vegetation)
         self.val_column_point = 'val_value' # column in point validation data to use for comparison
         self.val_band_raster = 1
@@ -61,6 +60,15 @@ class Configuration:
 
 
         # ------ ADVANCED SETTINGS ------
+
+        # _______ Preprocessing _______
+        self.overlap = 0.2  # minimum overlap between pointcloud and AOI, 0.5 means 50% overlap
+
+        self.filter_date = True  # Filter las files by date
+        self.start_date = '2023-06-01'  # Start date for filtering las files
+        self.end_date = '2023-06-30'  # End date for filtering las files
+
+        # _______ Processing _______
         self.chunk_size = 1000 # chunk in meters
         self.num_workers = 4  # Number of parallel workers for processing
 
