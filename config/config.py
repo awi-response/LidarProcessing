@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Lidar_test'  # Custom name for this run
+        self.run_name = 'new_test'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths

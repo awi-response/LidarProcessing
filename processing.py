@@ -90,6 +90,7 @@ def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution,
     temp_dsm_dir = os.path.join(temp_folder, base_name)
     os.makedirs(temp_dsm_dir, exist_ok=True)
 
+
     final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
     
     # Generate overlapping chunks from WKT
@@ -125,8 +126,10 @@ def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution,
         print(f"No chunks found for {base_name}. Skipping merge.")
 
     # Cleanup temporary directory
-    if os.path.exists(temp_dsm_dir):
-        shutil.rmtree(temp_dsm_dir, ignore_errors=True)
+    temp_root_dir = os.path.join(final_output_folder, "temp")
+
+    if os.path.exists(temp_root_dir):
+        shutil.rmtree(temp_root_dir, ignore_errors=True)
 
     # Increment the counter (safe in multiprocessing)
     counter.value += 1
@@ -234,8 +237,10 @@ def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution,
         print(f"No chunks found for {base_name}. Skipping merge.")
 
     # Cleanup temporary directory
-    if os.path.exists(temp_dtm_dir):
-        shutil.rmtree(temp_dtm_dir, ignore_errors=True)
+    temp_root_dir = os.path.join(final_output_folder, "temp")
+
+    if os.path.exists(temp_root_dir):
+        shutil.rmtree(temp_root_dir, ignore_errors=True)
 
     # Increment the counter (safe in multiprocessing)
     counter.value += 1

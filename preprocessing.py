@@ -149,11 +149,13 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
+        target_fp_dir = os.path.join(run_merged_dir, target_fp)
+
+        if os.path.isdir(target_fp_dir) and not os.listdir(target_fp_dir):
+            os.rmdir(target_fp_dir)
+
     print(f"\nProcessing completed in {str(timedelta(seconds=time.time() - start)).split('.')[0]}.")
-
-
-
-
+    
 
 def preprocess_all(conf):
     """Runs full preprocessing pipeline for LAS data."""
