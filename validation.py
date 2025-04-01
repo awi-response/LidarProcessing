@@ -119,6 +119,7 @@ def get_dem_value(preprocessed_dir: str, validation_target, val_gdf: gpd.GeoData
             continue
 
     print(f"\nTotal combined DEM-sampled points: {len(combined_gdf)}")
+
     return combined_gdf
 
 

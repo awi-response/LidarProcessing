@@ -72,7 +72,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         # Move the gap-filled DSM to the final output folder.
 
 
-def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, fill_gaps=True):
+def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps=True):
 
     chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
 
@@ -81,9 +81,10 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
         # Apply the CSF filter to classify ground points.
         {"type": "filters.csf",
-         "resolution": resolution,  # Adjust based on your dataset
+         "resolution": cloth_resolution,          # Adjust based on your dataset
          "rigidness": rigidness,                  # Typical value; modify if needed
-         "iterations": iterations                # Number of iterations for the simulation
+         "iterations": iterations,                # Number of iterations for the simulation
+         "step": time_step,                       # Step size for the simulation 
         },
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
         # Filter only ground points (assuming CSF sets ground points to classification 2)

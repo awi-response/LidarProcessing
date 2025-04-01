@@ -109,7 +109,7 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
     return target_dict
 
 
-def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir, sor_knn, sor_multiplier, num_workers, chunk_size=1000):
+def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_dir, max_elev, sor_knn, sor_multiplier, num_workers, chunk_size=1000):
 
     run_merged_dir = os.path.join(preprocessed_dir, run_name)
     os.makedirs(run_merged_dir, exist_ok=True)
@@ -154,8 +154,12 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
             target_geom_wkt = wkt_dumps(shape(gdf.geometry.iloc[0]))
             chunks = create_chunks_from_wkt(target_geom_wkt, chunk_size)
 
+            all_z = laspy.read(input_file).z
+            mean_z = np.mean(all_z)
+
+
             for chunk in chunks:
-                process_args.append((input_file, chunk, temp_dir, sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs))
+                process_args.append((input_file, chunk, temp_dir, mean_z, max_elev, sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs))
 
         with tqdm(total=len(process_args), desc=f"Processing {target_fp}", unit="chunk") as pbar:
             with Pool(processes=num_workers) as pool:
@@ -218,6 +222,7 @@ def preprocess_all(conf):
         target_footprint_dir=config.target_area_dir,
         las_dict=target_dict,
         preprocessed_dir=config.preprocessed_dir,
+        max_elev=config.max_elevation_threshold,
         sor_knn=config.knn,
         sor_multiplier=config.multiplier,
         num_workers=config.num_workers,

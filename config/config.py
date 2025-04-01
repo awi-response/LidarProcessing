@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'first_test'  # Custom name for this run
+        self.run_name = 'pingotest'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
@@ -25,13 +25,15 @@ class Configuration:
 
         # Output directories
         self.preprocessed_dir = '/isipd/projects/p_planetdw/data/lidar/04_preprocessed'  # Path for preprocessed lidar data
-        self.results_dir = '/isipd/projects/p_planetdw/data/lidar/06_results'  # Path for final DEM/DSM results
+        self.results_dir = '/isipd/projects/p_planetdw/data/lidar/05_results'  # Path for final DEM/DSM results
         self.validation_dir = '/isipd/projects/p_planetdw/data/lidar/06_validation'  # Path to validation data
 
         # ------ PREPROCESSING ------
 
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
-        self.target_name_field = 'layer'  # Field in target area gdf to use as target name
+        self.target_name_field = 'target_area'  # Field in target area gdf to use as target name
+
+        self.max_elevation_threshold = 100 # threshold to remove outliers from MTA/atmosphere, when outside of median elevation +/- threshold, the point is removed. Can be None
 
         # SOR parameters
         self.knn = 100  # number of k nearest neighbors, the higher the more stable
@@ -39,20 +41,23 @@ class Configuration:
 
         # ------- PROCESSING --------
 
-        self.create_DSM = True
+        self.create_DSM = False
         self.create_DEM = True
         self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
-        self.resolution = 1 # resoltion of generated rasters in meter, can be 'Auto' or number
+        self.resolution = 0.15 # resoltion of generated rasters in meter, can be 'Auto' or number
 
         self.point_density_method = 'sampling' # method to determine point density, can be 'sampling' (exact) or 'density' (fast)
+
         self.rigidness = 2 # rigidness of the simulated cloth, the lower the more flexible
         self.iterations = 1000 # number of simulation steps, the higher, the more adapted to the point cloud
+        self.time_step = 0.65 # time step of the simulation, the lower the more accurate, but slower
+        self.cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
 
         # ------ VALIDATION ------
 
-        self.data_type = 'vector'   # Type of validation data, can be 'raster' or 'vector' (points)
+        self.data_type = 'raster'   # Type of validation data, can be 'raster' or 'vector' (points)
         self.validation_target = 'DSM' # product to validate, can be 'DSM', 'DEM' or 'CHM', select validation data accordingly! (DSM: higest point, DEM: ground level, CHM: height of vegetation)
         self.val_column_point = 'val_value' # column in point validation data to use for comparison
         self.val_band_raster = 1
@@ -70,7 +75,8 @@ class Configuration:
 
         # _______ Processing _______
         self.chunk_size = 1000 # chunk in meters
-        self.num_workers = 4  # Number of parallel workers for processing
+        self.chunk_overlap = 0.2 # overlap between chunks in percentage, 0.2 means 20% overlap
+        self.num_workers = 8  # Number of parallel workers for processing
 
         # Set overall GDAL settings
         gdal.UseExceptions()  # Enable exceptions instead of silent failures

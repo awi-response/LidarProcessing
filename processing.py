@@ -73,7 +73,7 @@ def get_las_footprint_wkt(las_file):
     footprint = box(min_x, min_y, max_x, max_y)
     return footprint.wkt  # Convert to WKT format
 
-def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size):
+def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size, chunk_overlap):
     base_name = os.path.splitext(os.path.basename(las_file))[0]
     final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
 
@@ -91,7 +91,7 @@ def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution,
     temp_dsm_dir = os.path.join(temp_folder, base_name)
     os.makedirs(temp_dsm_dir, exist_ok=True)
 
-    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
+    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=chunk_overlap)
     dsm_chunks = []
 
     for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
@@ -119,7 +119,7 @@ def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution,
     return final_dsm_path
 
 
-def generate_dsm(input_folder, output_folder, run_name, method, resolution, chunk_size, num_workers, fill_gaps=True):
+def generate_dsm(input_folder, output_folder, run_name, method, resolution, chunk_size, chunk_overlap, num_workers, fill_gaps=True):
     """Parallelized DSM generation for all LAS files in a folder."""
     
     # Ensure final output folders exist
@@ -149,7 +149,7 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
                 async_results = [
                     pool.apply_async(
                         process_las_file_dsm, 
-                        (las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size)
+                        (las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size, chunk_overlap)
                     ) for las_file in las_files
                 ]
 
@@ -167,7 +167,7 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
     print(f"\nDSM generation completed in {elapsed_time}.")
 
 
-def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, counter, chunk_size):
+def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, time_step, cloth_resolution, counter, chunk_size, chunk_overlap):
     base_name = os.path.splitext(os.path.basename(las_file))[0]
     final_dtm_path = os.path.join(final_output_folder, f"{base_name}.tif")
 
@@ -185,11 +185,11 @@ def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution,
     temp_dtm_dir = os.path.join(temp_folder, base_name)
     os.makedirs(temp_dtm_dir, exist_ok=True)
 
-    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=0.2)
+    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=chunk_overlap)
     dtm_chunks = []
 
     for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
-        chunk_dtm_path = process_chunk_to_dem(las_file, large_chunk, small_chunk, temp_dtm_dir, rigidness, iterations, resolution, fill_gaps)
+        chunk_dtm_path = process_chunk_to_dem(las_file, large_chunk, small_chunk, temp_dtm_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps)
         if chunk_dtm_path:
             dtm_chunks.append(chunk_dtm_path)
 
@@ -213,7 +213,7 @@ def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution,
     return final_dtm_path
 
 
-def generate_dtm(input_folder, output_folder, run_name, method, rigidness, iterations, resolution, chunk_size, num_workers, fill_gaps=True):
+def generate_dtm(input_folder, output_folder, run_name, method, rigidness, iterations, resolution, time_step, cloth_resolution ,chunk_size, chunk_overlap, num_workers, fill_gaps=True):
     """Parallelized DTM generation for all LAS files in a folder."""
     
     # Ensure final output folders exist
@@ -243,7 +243,7 @@ def generate_dtm(input_folder, output_folder, run_name, method, rigidness, itera
                 async_results = [
                     pool.apply_async(
                         process_las_file_dem, 
-                        (las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, counter, chunk_size)
+                        (las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, time_step, cloth_resolution, fill_gaps, counter, chunk_size, chunk_overlap)
                     ) for las_file in las_files
                 ]
                 
@@ -339,7 +339,8 @@ def process_all(config):
             chunk_size=config.chunk_size,
             fill_gaps=config.fill_gaps,
             num_workers=config.num_workers, 
-            method=config.point_density_method
+            method=config.point_density_method,
+            chunk_overlap=config.chunk_overlap
         )
     
     
@@ -355,8 +356,11 @@ def process_all(config):
             fill_gaps=config.fill_gaps,
             method=config.point_density_method, 
             rigidness = config.rigidness,
+            time_step=config.time_step,
+            cloth_resolution=config.cloth_resolution,
             iterations = config.iterations,
-            num_workers= config.num_workers
+            num_workers= config.num_workers,
+            chunk_overlap=config.chunk_overlap
         )
 
     if config.create_CHM:
