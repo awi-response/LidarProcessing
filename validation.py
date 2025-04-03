@@ -12,7 +12,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from core.utils import save_validation_report
+from core.utils import compute_error_metrics, generate_validation_report
 
 
 def raster_to_points(val_dir: str, val_band: int, num_points: int, target_dir: str) -> gpd.GeoDataFrame:
@@ -69,7 +69,7 @@ def raster_to_points(val_dir: str, val_band: int, num_points: int, target_dir: s
                 print(f"Error sampling raster {raster_file}: {e}")
                 continue
 
-    print(f"\nFinal number of validation points: {len(final_gdf)}")
+    #print(f"\nFinal number of validation points: {len(final_gdf)}")
     return final_gdf
 
 
@@ -118,86 +118,33 @@ def get_dem_value(preprocessed_dir: str, validation_target, val_gdf: gpd.GeoData
             print(f"Error processing {raster_file}: {str(e)}")
             continue
 
-    print(f"\nTotal combined DEM-sampled points: {len(combined_gdf)}")
+    #print(f"\nTotal combined DEM-sampled points: {len(combined_gdf)}")
 
     return combined_gdf
 
 
-def compute_error_metrics(
-    gdf: gpd.GeoDataFrame,
-    reference_col: str,
-    prediction_col: str,
-    plot: bool = True,
-    save_path: Optional[str] = None
-) -> tuple[dict, Optional[plt.Figure]]:
-    df = gdf[[reference_col, prediction_col, 'raster_name']].dropna()
-    print(f"\nComputing error metrics on {len(df)} points")
-
-    if df.empty:
-        print("No valid points for computing error metrics.")
-        return {"global": {}, "per_raster": {}}, None
-
-    def compute_stats(subset):
-        res = subset[prediction_col] - subset[reference_col]
-        abs_res = np.abs(res)
-
-        return {
-            "RMSE": np.sqrt(np.mean(res ** 2)),
-            "MAE": np.mean(abs_res),
-            "NMAD": 1.4826 * stats.median_abs_deviation(res, scale=1.0),
-            "MR": stats.tmean(res),
-            "STDE": stats.tstd(res),
-            "Median Error": np.median(res),
-            "LE90": np.percentile(abs_res, 90),
-            "LE95": np.percentile(abs_res, 95),
-            "Max Over": np.max(res),
-            "Max Under": np.min(res),
-            "R2": stats.linregress(subset[reference_col], subset[prediction_col])[2] ** 2
-        }
-
-    global_stats = compute_stats(df)
-
-    per_raster_stats = {
-        raster_name: compute_stats(df[df['raster_name'] == raster_name])
-        for raster_name in df['raster_name'].unique()
-    }
-
-    fig = None
-    if plot:
-        unique_rasters = df['raster_name'].unique()
-        cols = 3
-        rows = (len(unique_rasters) + cols - 1) // cols
-        fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), squeeze=False)
-
-        for idx, raster_name in enumerate(unique_rasters):
-            ax = axes[idx // cols][idx % cols]
-            subset = df[df['raster_name'] == raster_name]
-            ax.scatter(subset[reference_col], subset[prediction_col], alpha=0.6, edgecolor='k', linewidth=0.3)
-
-            min_val = min(subset[reference_col].min(), subset[prediction_col].min())
-            max_val = max(subset[reference_col].max(), subset[prediction_col].max())
-            ax.plot([min_val, max_val], [min_val, max_val], 'r--', label='1:1 Line')
-
-            ax.set_title(raster_name, fontsize=10)
-            ax.set_xlabel('Reference Data')
-            ax.set_ylabel('Modelled Data')
-            ax.grid(True, linestyle='--', alpha=0.5)
-            ax.axis('equal')
-
-        for i in range(len(unique_rasters), rows * cols):
-            fig.delaxes(axes[i // cols][i % cols])
-
-        fig.tight_layout(rect=[0, 0, 1, 0.96])
-
-        if save_path:
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            fig.savefig(save_path, dpi=500)
-
-    return {
-        "global": global_stats,
-        "per_raster": per_raster_stats
-    }, fig
-
+def validate_model(gdf: gpd.GeoDataFrame, reference_col: str, prediction_col: str,
+                  report_path: Optional[str] = None) -> dict:
+    """
+    Main function to compute metrics and optionally generate report.
+    
+    Args:
+        gdf: GeoDataFrame containing validation data
+        reference_col: Name of column with reference values
+        prediction_col: Name of column with predicted values
+        report_path: Optional path to save the report
+        
+    Returns:
+        Dictionary containing validation metrics
+    """
+    # Compute metrics
+    metrics, _ = compute_error_metrics(gdf, reference_col, prediction_col, plot=False)
+    
+    # Generate report if requested
+    if report_path:
+        generate_validation_report(gdf, reference_col, prediction_col, report_path)
+    
+    return metrics
 
 
 def validate_all(conf):
@@ -244,16 +191,13 @@ def validate_all(conf):
     print(f"Saved validation points to: {output_path}")
 
     print("\n--- Computing Error Metrics ---")
-    metrics, plot_fig = compute_error_metrics(
-        combined,
-        config.val_column_point,
-        'dem_value',
-        plot=True,
-        save_path=None
-    )
-
     report_path = os.path.join(val_run_dir, f'{int(time_start)}_validation_report_{config.run_name}.pdf')
-    save_validation_report(metrics, plot_fig, report_path)
+    validate_model(
+        combined,
+        reference_col=config.val_column_point,
+        prediction_col='dem_value',
+        report_path=report_path
+    )
     print(f"Validation report saved to: {report_path}")
     print("Validation complete.")
     print("Total validation time:", str(timedelta(seconds=int(time.time() - time_start))))

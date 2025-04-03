@@ -6,6 +6,7 @@ import os
 import rasterio
 from rasterio.merge import merge
 from osgeo import gdal
+import shutil
 import json
 import subprocess
 from shapely.geometry import box, shape
@@ -72,7 +73,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         # Move the gap-filled DSM to the final output folder.
 
 
-def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps=True):
+def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, time_step, cloth_resolution=1, fill_gaps=True):
 
     chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
 
@@ -81,7 +82,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
         # Apply the CSF filter to classify ground points.
         {"type": "filters.csf",
-         "resolution": cloth_resolution,          # Adjust based on your dataset
+         "resolution": float(cloth_resolution),          # Adjust based on your dataset
          "rigidness": rigidness,                  # Typical value; modify if needed
          "iterations": iterations,                # Number of iterations for the simulation
          "step": time_step,                       # Step size for the simulation 
@@ -92,7 +93,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {"type": "writers.gdal",
          "filename": chunk_file,
-         "resolution": resolution,
+         "resolution": float(cloth_resolution),
          "output_type": "mean",
          "nodata": -9999,
          "gdalopts": "COMPRESS=LZW"}
@@ -100,12 +101,36 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
             
     # Run the PDAL pipeline.
     pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
-            
+
+    resampled_file = chunk_file.replace('.tif', '_resampled.tif')
+
+    #get original chunk bounds
+    minx, miny, maxx, maxy = small_chunk_bbox.bounds
+
+    try:
+        subprocess.run([
+            "gdalwarp",
+            "-tr", str(resolution), str(resolution),
+            "-r", "bilinear",
+            "-tap",
+            "-te", str(minx), str(miny), str(maxx), str(maxy),
+            "-overwrite",
+            chunk_file,
+            resampled_file
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        
+        # Overwrite original with the resampled version
+        shutil.move(resampled_file, chunk_file)
+
+    except subprocess.CalledProcessError as e:
+        print("Error while running gdalwarp:")
+        print(e.stderr.decode('utf-8'))
+                
         # Fill gaps using GDAL if enabled.
     if fill_gaps:
         subprocess.run([
             "gdal_fillnodata.py",
-            "-md", "10",
+            "-md", "100",
             "-si", "2",
             chunk_file,
             chunk_file

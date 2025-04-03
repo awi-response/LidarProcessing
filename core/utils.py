@@ -3,10 +3,16 @@ import shutil
 import geopandas as gpd
 import pandas as pd
 
-from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
-import matplotlib.patches as mpatches
+import geopandas as gpd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import pandas as pd
+from weasyprint import HTML
+from typing import Optional, Dict, Tuple
+from io import BytesIO
+import base64
 
 
 def cleanup_temp_dir(temp_dir):
@@ -66,115 +72,190 @@ plt.rcParams.update({
     'axes.titleweight': 'bold',
 })
 
-def save_validation_report(metrics: dict, plot_fig, save_path: str):
-
-    def rename_and_format_metrics(metric_dict):
-        name_map = {
-            "RMSE": "RMSE (Root Mean Square Error)",
-            "MAE": "MAE (Mean Absolute Error)",
-            "NMAD": "NMAD (Normalized Median Absolute Deviation)",
-            "MR": "MR (Mean Residual)",
-            "STDE": "STDE (Standard Deviation of Error)",
-            "Median Error": "Median Residual",
-            "LE90": "LE90 (90% Linear Error)",
-            "LE95": "LE95 (95% Linear Error)",
-            "Max Over": "Max Overestimate",
-            "Max Under": "Max Underestimate",
-            "R2": "R² (Coefficient of Determination)"
-        }
+def compute_error_metrics(
+    gdf: gpd.GeoDataFrame,
+    reference_col: str,
+    prediction_col: str,
+    plot: bool = True,
+    save_path: Optional[str] = None
+) -> Tuple[Dict, Optional[plt.Figure]]:
+    """
+    Compute validation metrics for reference vs predicted values.
+    
+    Args:
+        gdf: GeoDataFrame containing reference and prediction data
+        reference_col: Name of column containing reference values
+        prediction_col: Name of column containing predicted values
+        plot: Whether to generate plots (False for markdown generation)
+        save_path: Path to save figures (None for markdown generation)
+        
+    Returns:
+        Tuple of (metrics dictionary, figure object)
+    """
+    df = gdf[[reference_col, prediction_col, 'raster_name']].dropna()
+    
+    
+    if df.empty:
+        print("No valid validation data found.")
+        return {"global": {}, "per_raster": {}}, None
+    
+    def compute_stats(subset):
+        """Compute statistical metrics for a dataset subset."""
+        res = subset[prediction_col] - subset[reference_col]
+        abs_res = np.abs(res)
+        
         return {
-            name_map.get(k, k): round(v, 3) if isinstance(v, (float, int)) else v
-            for k, v in metric_dict.items()
+            "RMSE": np.sqrt(np.mean(res ** 2)),
+            "MAE": np.mean(abs_res),
+            "NMAD": 1.4826 * stats.median_abs_deviation(res, scale=1.0),
+            "MR": stats.tmean(res),
+            "STDE": stats.tstd(res),
+            "Median Error": np.median(res),
+            "LE90": np.percentile(abs_res, 90),
+            "LE95": np.percentile(abs_res, 95),
+            "Max Over": np.max(res),
+            "Max Under": np.min(res),
+            "R2": stats.linregress(subset[reference_col], subset[prediction_col])[2] ** 2
         }
+    
+    # Compute global statistics
+    global_stats = compute_stats(df)
+    
+    # Compute per-raster statistics
+    per_raster_stats = {
+        raster_name: compute_stats(df[df['raster_name'] == raster_name])
+        for raster_name in df['raster_name'].unique()
+    }
+    
+    fig = None
+    if plot:
+        unique_rasters = df['raster_name'].unique()
+        cols = 3
+        rows = (len(unique_rasters) + cols - 1) // cols
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5), squeeze=False)
+        
+        for idx, raster_name in enumerate(unique_rasters):
+            ax = axes[idx // cols][idx % cols]
+            subset = df[df['raster_name'] == raster_name]
+            
+            # Create scatter plot
+            ax.scatter(subset[reference_col], subset[prediction_col], alpha=0.6, edgecolor='k', linewidth=0.3)
+            
+            # Add 1:1 line
+            min_val = min(subset[reference_col].min(), subset[prediction_col].min())
+            max_val = max(subset[reference_col].max(), subset[prediction_col].max())
+            ax.plot([min_val, max_val], [min_val, max_val], 'r--', label='1:1 Line')
+            
+            # Customize plot
+            ax.set_title(raster_name, fontsize=10)
+            ax.set_xlabel('Reference Data')
+            ax.set_ylabel('Modelled Data')
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.axis('equal')
+        
+        # Remove empty subplots
+        for i in range(len(unique_rasters), rows * cols):
+            fig.delaxes(axes[i // cols][i % cols])
+        
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        
+        if save_path:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            fig.savefig(save_path, dpi=500)
+    
+    return {
+        "global": global_stats,
+        "per_raster": per_raster_stats
+    }, fig
 
-    def add_footer(fig, text="Generated by Validation Suite | March 2025"):
-        fig.text(0.5, 0.02, text, ha='center', fontsize=8, color='gray')
-
-    description_text = [
-        "\u2022 RMSE (Root Mean Square Error): Square root of average squared differences \n between predicted and true values. Sensitive to large errors.",
-        "\u2022 MAE (Mean Absolute Error): Average of absolute errors.\n Less sensitive to outliers than RMSE.",
-        "\u2022 NMAD (Normalized Median Absolute Deviation): Robust dispersion estimator.",
-        "\u2022 MR (Mean Residual): Average bias. \nIndicates systematic over/underestimation.",
-        "\u2022 STDE (Standard Deviation of Error): Spread of residuals (non-robust).",
-        "\u2022 Median Residual: Median of residuals.",
-        "\u2022 LE90 / LE95: 90th and 95th percentiles\n of absolute errors.",
-        "\u2022 Max Overestimate / Underestimate: Maximum positive/negative residual.",
-        "\u2022 R² (Coefficient of Determination): Fit quality between\n prediction and reference (1 = perfect)."
-    ]
-
-    with PdfPages(save_path) as pdf:
-        # Page 1: Plot
-        add_footer(plot_fig)
-        pdf.savefig(plot_fig)
-        plt.close(plot_fig)
-
-        # Page 2: Definitions (formatted)
-        fig_defs = plt.figure(figsize=(8.5, 11))
-        gs = gridspec.GridSpec(1, 1)
-        ax = fig_defs.add_subplot(gs[0])
-        ax.axis('off')
-        fig_defs.subplots_adjust(left=0.1, right=0.9, top=0.92, bottom=0.1)
-
-        ax.text(0, 1, "Validation Metrics - Definitions", fontsize=16, fontweight='bold', va='top')
-        y_pos = 0.95
-        for line in description_text:
-            ax.text(0, y_pos, line, fontsize=11, va='top')
-            y_pos -= 0.045
-
-        add_footer(fig_defs)
-        pdf.savefig(fig_defs)
-        plt.close(fig_defs)
-
-        # Page 3: Global metrics
-        global_metrics = rename_and_format_metrics(metrics['global'])
-        fig_global = _render_metrics_table(global_metrics, title="Global Validation Metrics")
-        add_footer(fig_global)
-        pdf.savefig(fig_global)
-        plt.close(fig_global)
-
-        # Per-raster pages
-        for raster_name, stats in metrics['per_raster'].items():
-            raster_metrics = rename_and_format_metrics(stats)
-            fig_raster = _render_metrics_table(raster_metrics, title=f"Metrics for {raster_name}")
-            add_footer(fig_raster)
-            pdf.savefig(fig_raster)
-            plt.close(fig_raster)
-
-def _render_metrics_table(metrics: dict, title: str):
-    fig, ax = plt.subplots(figsize=(8.5, 11))
-    ax.axis('tight')
-    ax.axis('off')
-
-    table_data = [(k, str(v)) for k, v in metrics.items()]
-    col_labels = ["Metric", "Value"]
-
-    table = ax.table(
-        cellText=table_data,
-        colLabels=col_labels,
-        colWidths=[0.6, 0.3],
-        cellLoc='left',
-        loc='center'
-    )
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(11)
-    table.scale(1, 1.5)
-
-    for (row, col), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_text_props(weight='bold')
-            cell.set_facecolor("#f0f0f0")
-        else:
-            if row % 2 == 0:
-                cell.set_facecolor('#f9f9f9')
-            else:
-                cell.set_facecolor('#ffffff')
-            if col == 0:
-                cell.get_text().set_ha('left')
-            else:
-                cell.get_text().set_ha('right')
-        cell.set_linewidth(0.5)
-
-    ax.set_title(title, fontweight='bold', fontsize=16, pad=30)
-    fig.tight_layout()
-    return fig
+def generate_validation_report(gdf, reference_col, prediction_col, output_path):
+    """
+    Generate a validation report using WeasyPrint.
+    
+    Args:
+        gdf: GeoDataFrame containing validation data
+        reference_col: Name of column with reference values
+        prediction_col: Name of column with predicted values
+        output_path: Path where the PDF report will be saved
+    """
+    # Compute metrics
+    metrics, _ = compute_error_metrics(gdf, reference_col, prediction_col, plot=False)
+    
+    # Create HTML content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Validation Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 2cm; }}
+            h1 {{ color: #333; }}
+            h2 {{ color: #666; }}
+            table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .plot {{ text-align: center; margin: 1em 0; }}
+            .plot img {{ max-width: 100%; height: auto; }}
+        </style>
+    </head>
+    <body>
+        <h1>Validation Report</h1>
+        <h2>Summary Statistics</h2>
+    """
+    
+    # Add global metrics table
+    global_df = pd.DataFrame.from_dict(metrics['global'], orient='index', columns=['Value'])
+    html_content += global_df.to_html(classes='metric-table')
+    
+    # Add global plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    global_data = gdf[[reference_col, prediction_col]].dropna()
+    ax.scatter(global_data[reference_col], global_data[prediction_col], alpha=0.6)
+    ax.plot([global_data[reference_col].min(), global_data[reference_col].max()],
+            [global_data[reference_col].min(), global_data[reference_col].max()], 'r--')
+    ax.set_title('Global Validation Results')
+    ax.set_xlabel('Reference Data')
+    ax.set_ylabel('Modelled Data')
+    
+    # Save plot to bytes buffer
+    plot_buffer = BytesIO()
+    fig.savefig(plot_buffer, format='png', bbox_inches='tight', dpi=300)
+    plot_buffer.seek(0)
+    encoded_image = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
+    html_content += f'<div class="plot"><img src="data:image/png;base64,{encoded_image}"></div>'
+    
+    # Add per-raster sections
+    for raster_name in gdf['raster_name'].unique():
+        html_content += f'<h2>{raster_name}</h2>'
+        
+        # Add raster-specific metrics
+        raster_df = pd.DataFrame.from_dict(metrics['per_raster'][raster_name], 
+                                         orient='index', columns=['Value'])
+        html_content += raster_df.to_html(classes='metric-table')
+        
+        # Add scatter plot
+        raster_data = gdf[gdf['raster_name'] == raster_name]
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(raster_data[reference_col], raster_data[prediction_col], alpha=0.6)
+        ax.plot([raster_data[reference_col].min(), raster_data[reference_col].max()],
+                [raster_data[reference_col].min(), raster_data[reference_col].max()], 'r--')
+        ax.set_title(f'{raster_name} Validation Results')
+        ax.set_xlabel('Reference Data')
+        ax.set_ylabel('Modelled Data')
+        
+        # Save plot to bytes buffer
+        plot_buffer = BytesIO()
+        fig.savefig(plot_buffer, format='png', bbox_inches='tight', dpi=300)
+        plot_buffer.seek(0)
+        encoded_image = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
+        html_content += f'<div class="plot"><img src="data:image/png;base64,{encoded_image}"></div>'
+    
+    html_content += """
+    </body>
+    </html>
+    """
+    
+    # Generate PDF
+    HTML(string=html_content).write_pdf(output_path)

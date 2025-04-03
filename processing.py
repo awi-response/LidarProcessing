@@ -118,20 +118,19 @@ def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution,
     counter.value += 1
     return final_dsm_path
 
+def process_dsm_chunk_wrapper(args):
+    las_file, large_chunk, small_chunk, output_dir, resolution = args
+    return process_chunk_to_dsm(las_file, large_chunk, small_chunk, output_dir, resolution)
+
 
 def generate_dsm(input_folder, output_folder, run_name, method, resolution, chunk_size, chunk_overlap, num_workers, fill_gaps=True):
-    """Parallelized DSM generation for all LAS files in a folder."""
-    
-    # Ensure final output folders exist
+
     final_output_folder = os.path.join(output_folder, run_name, 'DSM')
     os.makedirs(final_output_folder, exist_ok=True)
-    
     temp_folder = os.path.join(final_output_folder, "temp")
     os.makedirs(temp_folder, exist_ok=True)
 
     start_time = time.time()
-
-    # Find all LAS/LAZ files
     las_files = glob.glob(os.path.join(input_folder, run_name, "*.las")) + \
                 glob.glob(os.path.join(input_folder, run_name, "*.laz"))
 
@@ -139,29 +138,42 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
         print("No LAS/LAZ files found. Exiting DSM generation.")
         return
 
-    # Use multiprocessing Manager to create a shared counter
-    with multiprocessing.Manager() as manager:
-        counter = manager.Value('i', 0)  # Shared integer counter
+    chunk_tasks = []
+    for las_file in las_files:
+        target_wkt = get_las_footprint_wkt(las_file)
+        avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
+        if not is_resolution_ok:
+            print(f"Warning: DSM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
 
-        # Progress bar in the main process
-        with tqdm(total=len(las_files), desc="Processing LAS Files", unit="file") as progress_bar:
-            with multiprocessing.Pool(processes=num_workers) as pool:
-                async_results = [
-                    pool.apply_async(
-                        process_las_file_dsm, 
-                        (las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size, chunk_overlap)
-                    ) for las_file in las_files
-                ]
+        base_name = os.path.splitext(os.path.basename(las_file))[0]
+        temp_dsm_dir = os.path.join(temp_folder, base_name)
+        os.makedirs(temp_dsm_dir, exist_ok=True)
 
-                # Update progress bar dynamically
-                while counter.value < len(las_files):
-                    progress_bar.n = counter.value
-                    progress_bar.refresh()
-                    time.sleep(1)  # Small delay to prevent excessive updates
-                
-                # Wait for all processes to finish
-                for result in async_results:
-                    result.get()
+        large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size, chunk_overlap)
+        for large_chunk, small_chunk in zip(large_chunks, small_chunks):
+            chunk_tasks.append((las_file, large_chunk, small_chunk, temp_dsm_dir, resolution))
+
+    with multiprocessing.Pool(processes=num_workers) as pool:
+        list(tqdm(pool.imap(process_dsm_chunk_wrapper, chunk_tasks), total=len(chunk_tasks), desc="Processing DSM Chunks"))
+
+    for las_file in las_files:
+        base_name = os.path.splitext(os.path.basename(las_file))[0]
+        temp_dsm_dir = os.path.join(temp_folder, base_name)
+        final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+
+        chunk_files = sorted(glob.glob(os.path.join(temp_dsm_dir, "*.tif")))
+        if not chunk_files:
+            print(f"No DSM chunks found for {base_name}. Skipping.")
+            continue
+
+        merged_dsm = merge_chunks(chunk_files, final_dsm_path)
+        if fill_gaps and merged_dsm:
+            filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_filled.tif")
+            subprocess.run(["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dsm, filled_dsm_path],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.replace(filled_dsm_path, final_dsm_path)
+
+        shutil.rmtree(temp_dsm_dir, ignore_errors=True)
 
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nDSM generation completed in {elapsed_time}.")
@@ -213,50 +225,64 @@ def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution,
     return final_dtm_path
 
 
+def process_dtm_chunk_wrapper(args):
+    las_file, large_chunk, small_chunk, output_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps = args
+    return process_chunk_to_dem(las_file, large_chunk, small_chunk, output_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps)
+
+
 def generate_dtm(input_folder, output_folder, run_name, method, rigidness, iterations, resolution, time_step, cloth_resolution ,chunk_size, chunk_overlap, num_workers, fill_gaps=True):
-    """Parallelized DTM generation for all LAS files in a folder."""
-    
-    # Ensure final output folders exist
+
+
     final_output_folder = os.path.join(output_folder, run_name, 'DTM')
     os.makedirs(final_output_folder, exist_ok=True)
-    
     temp_folder = os.path.join(final_output_folder, "temp")
     os.makedirs(temp_folder, exist_ok=True)
-    
+
     start_time = time.time()
-    
-    # Find all LAS/LAZ files
     las_files = glob.glob(os.path.join(input_folder, run_name, "*.las")) + \
                 glob.glob(os.path.join(input_folder, run_name, "*.laz"))
-    
+
     if not las_files:
         print("No LAS/LAZ files found. Exiting DTM generation.")
         return
-    
-    # Use multiprocessing Manager to create a shared counter
-    with multiprocessing.Manager() as manager:
-        counter = manager.Value('i', 0)  # Shared integer counter
-        
-        # Progress bar in the main process
-        with tqdm(total=len(las_files), desc="Processing LAS Files", unit="file") as progress_bar:
-            with multiprocessing.Pool(processes=num_workers) as pool:
-                async_results = [
-                    pool.apply_async(
-                        process_las_file_dem, 
-                        (las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, time_step, cloth_resolution, fill_gaps, counter, chunk_size, chunk_overlap)
-                    ) for las_file in las_files
-                ]
-                
-                # Update progress bar dynamically
-                while counter.value < len(las_files):
-                    progress_bar.n = counter.value
-                    progress_bar.refresh()
-                    time.sleep(1)  # Small delay to prevent excessive updates
-                
-                # Wait for all processes to finish
-                for result in async_results:
-                    result.get()
-    
+
+    chunk_tasks = []
+    for las_file in las_files:
+        target_wkt = get_las_footprint_wkt(las_file)
+        avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
+        if not is_resolution_ok:
+            print(f"Warning: DTM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
+
+        base_name = os.path.splitext(os.path.basename(las_file))[0]
+        temp_dtm_dir = os.path.join(temp_folder, base_name)
+        os.makedirs(temp_dtm_dir, exist_ok=True)
+
+        large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size, chunk_overlap)
+        for large_chunk, small_chunk in zip(large_chunks, small_chunks):
+            chunk_tasks.append((las_file, large_chunk, small_chunk, temp_dtm_dir, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps))
+
+    with multiprocessing.Pool(processes=num_workers) as pool:
+        list(tqdm(pool.imap(process_dtm_chunk_wrapper, chunk_tasks), total=len(chunk_tasks), desc="Processing DTM Chunks"))
+
+    for las_file in las_files:
+        base_name = os.path.splitext(os.path.basename(las_file))[0]
+        temp_dtm_dir = os.path.join(temp_folder, base_name)
+        final_dtm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+
+        chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
+        if not chunk_files:
+            print(f"No DTM chunks found for {base_name}. Skipping.")
+            continue
+
+        merged_dtm = merge_chunks(chunk_files, final_dtm_path)
+        if fill_gaps and merged_dtm:
+            filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
+            subprocess.run(["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.replace(filled_dtm_path, final_dtm_path)
+
+        shutil.rmtree(temp_dtm_dir, ignore_errors=True)
+
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nDTM generation completed in {elapsed_time}.")
 
@@ -298,6 +324,7 @@ def generate_chm(input_folder, output_folder, run_name):
 
                 if dsm.shape != dtm.shape:
                     print(f"Skipping {base_name}: DSM and DTM raster sizes do not match.")
+                    print(f"  DSM shape: {dsm.shape}, DTM shape: {dtm.shape}")
                     continue
 
                 chm = dsm - dtm
