@@ -38,7 +38,27 @@ def create_chunks_from_wkt(input_wkt, chunk_size=1000, overlap=0.2):
 
 def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, resolution):
 
-    chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
+    chunk_file = os.path.join(
+        temp_dir,
+        f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif"
+    )
+
+    # Extract bounds and compute grid size
+    minx, miny, maxx, maxy = small_chunk_bbox.bounds
+    width = int((maxx - minx) / resolution)
+    height = int((maxy - miny) / resolution)
+
+    #print("=" * 60)
+    #print(f"[INFO] Processing chunk: {chunk_file}")
+    #print(f"[INFO] Bounds: minx={minx}, miny={miny}, maxx={maxx}, maxy={maxy}")
+    #print(f"[INFO] Resolution: {resolution}")
+    #print(f"[INFO] Calculated grid size: width={width}, height={height}")
+    #print("=" * 60)
+
+    # Optional: sanity check for overly large rasters
+    if width > 50000 or height > 50000:
+        print("[WARNING] Grid size too large — skipping chunk to avoid crash.")
+        return None
 
     pipeline = [
         {"type": "readers.las", "filename": input_file},
@@ -50,61 +70,84 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         },
         {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {
-         "type": "writers.gdal",
-         "filename": chunk_file,
-         "resolution": resolution,
-         "output_type": "max",
-         "nodata": -9999,
-         "gdalopts": "COMPRESS=LZW"
+            "type": "writers.gdal",
+            "filename": chunk_file,
+            "resolution": resolution,
+            "output_type": "max",
+            "nodata": -9999,
+            "gdalopts": "COMPRESS=LZW"
         }
-            ]
-            
-            # Run PDAL pipeline.
-    pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
+    ]
 
-    subprocess.run([
-        "gdal_fillnodata.py",
-        "-md", "10",
-        "-si", "2",
-        chunk_file,
-        chunk_file
+    try:
+        #print("[INFO] Running PDAL pipeline...")
+        pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
+        #print("[INFO] PDAL execution completed.")
+    except RuntimeError as e:
+        print(f"[ERROR] PDAL execution failed: {e}")
+        return None
+
+    try:
+        subprocess.run([
+            "gdal_fillnodata.py",
+            "-md", "10",
+            "-si", "2",
+            chunk_file,
+            chunk_file
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        #print(f"Filled DSM saved (temp): {temp_filled_dsm_path}")
-        # Move the gap-filled DSM to the final output folder.
+        #print("[INFO] Nodata gaps filled with GDAL.")
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] GDAL fillnodata failed: {e}")
 
 
-def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, time_step, cloth_resolution=1, fill_gaps=True):
+def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_dir, rigidness, iterations, resolution, time_step, cloth_resolution=1, fill_gaps=True, filter_smrf=False, scalar=None, slope=None, window=None, threshold=None, filter_csf=False):
 
-    chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif")
+    chunk_file = os.path.join(
+        temp_dir,
+        f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif"
+    )
 
     pipeline = [
         {"type": "readers.las", "filename": input_file},
         {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
-        # Apply the CSF filter to classify ground points.
+
+    ]
+    if filter_smrf:
+
+        pipeline.append({"type": "filters.smrf",
+         "scalar": scalar,
+         "slope": slope,
+         "window": window,
+         "threshold": threshold,})
+        
+    if filter_csf:
+        pipeline.append(
         {"type": "filters.csf",
-         "resolution": float(cloth_resolution),          # Adjust based on your dataset
-         "rigidness": rigidness,                  # Typical value; modify if needed
-         "iterations": iterations,                # Number of iterations for the simulation
-         "step": time_step,                       # Step size for the simulation 
-        },
+         "resolution": float(cloth_resolution),
+         "rigidness": rigidness,
+         "iterations": iterations,
+         "step": time_step,
+         "threshold": threshold,})
+        
+    pipeline += [
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
-        # Filter only ground points (assuming CSF sets ground points to classification 2)
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {"type": "writers.gdal",
          "filename": chunk_file,
          "resolution": float(cloth_resolution),
-         "output_type": "mean",
+         "output_type": "idw",
          "nodata": -9999,
          "gdalopts": "COMPRESS=LZW"}
     ]
-            
-    # Run the PDAL pipeline.
-    pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
+
+    try:
+        pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
+    except RuntimeError as e:
+        print(f"[ERROR] PDAL execution failed: {e}")
+        return None
 
     resampled_file = chunk_file.replace('.tif', '_resampled.tif')
-
-    #get original chunk bounds
     minx, miny, maxx, maxy = small_chunk_bbox.bounds
 
     try:
@@ -118,24 +161,29 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
             chunk_file,
             resampled_file
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        
-        # Overwrite original with the resampled version
+
         shutil.move(resampled_file, chunk_file)
 
     except subprocess.CalledProcessError as e:
-        print("Error while running gdalwarp:")
+        print("[ERROR] gdalwarp failed:")
         print(e.stderr.decode('utf-8'))
-                
-        # Fill gaps using GDAL if enabled.
+        return None
+
     if fill_gaps:
-        subprocess.run([
-            "gdal_fillnodata.py",
-            "-md", "100",
-            "-si", "2",
-            chunk_file,
-            chunk_file
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Move the gap-filled DTM to the final output folder.
+        try:
+            subprocess.run([
+                "gdal_fillnodata.py",
+                "-md", "10",
+                "-si", "2",
+                chunk_file,
+                chunk_file
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] GDAL fillnodata failed: {e}")
+            return None
+
+    return chunk_file
+
 
 
 

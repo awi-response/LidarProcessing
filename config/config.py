@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'newtestbiiig'  # Custom name for this run
+        self.run_name = 'Peelreprocessed'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
@@ -33,27 +33,37 @@ class Configuration:
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
         self.target_name_field = 'target_area'  # Field in target area gdf to use as target name
 
-        self.max_elevation_threshold = 200 # threshold to remove outliers from MTA/atmosphere, when outside of median elevation +/- threshold, the point is removed. 
+        self.max_elevation_threshold = 500 # threshold to remove outliers from MTA/atmosphere, when outside of median elevation +/- threshold, the point is removed. 
 
         # SOR parameters
         self.knn = 100  # number of k nearest neighbors, the higher the more stable
-        self.multiplier = 2.2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
+        self.multiplier = 2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
 
         # ------- PROCESSING --------
 
-        self.create_DSM = True
+        self.create_DSM = False
         self.create_DEM = True
         self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
-        self.resolution = 0.2 # resoltion of generated rasters in meter, can be 'Auto' or number
+        self.resolution = 1 # resoltion of generated rasters in meter, can be 'Auto' or number
 
         self.point_density_method = 'sampling' # method to determine point density, can be 'sampling' (exact) or 'density' (fast)
 
-        self.rigidness = 2 # rigidness of the simulated cloth, the lower the more flexible
-        self.iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
-        self.time_step = 1 # time step of the simulation, the lower the more accurate, but slower
-        self.cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
+    # ______ GROUND FILTERING ______
+
+        self.smrf_filter = True # use SMRF filter 
+        self.csf_filter = True # use cloth simulation method
+        self.threshold = 0.5 # threshold for filters
+
+        self.smrf_window_size = 5 # window size for SMRF filter, the higher the more vegetation is removed
+        self.smrf_slope = 0.15 # slope for SMRF filter, the higher the more vegetation is removed
+        self.smrf_scalar = 1.25 # scalar for SMRF filter, the higher the more vegetation is removed
+
+        self.csf_rigidness = 1 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
+        self.csf_iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
+        self.csf_time_step = 0.9 # time step of the simulation, the lower the more accurate, but slower
+        self.csf_cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
 
         # ------ VALIDATION ------
 
@@ -75,8 +85,8 @@ class Configuration:
 
         # _______ Processing _______
         self.chunk_size = 1000 # chunk in meters
-        self.chunk_overlap = 0.2 # overlap between chunks in percentage, 0.2 means 20% overlap
-        self.num_workers = 4  # Number of parallel workers for processing
+        self.chunk_overlap = 0.1 # overlap between chunks in percentage, 0.2 means 20% overlap
+        self.num_workers = 32  # Number of parallel workers for processing
 
         # Set overall GDAL settings
         gdal.UseExceptions()  # Enable exceptions instead of silent failures
