@@ -356,6 +356,7 @@ def generate_chm(input_folder, output_folder, run_name):
             with rasterio.open(dsm_path) as dsm_src, rasterio.open(dtm_path) as dtm_src:
                 # Read DSM
                 dsm = dsm_src.read(1)
+                dsm_mask = dsm_src.read_masks(1)
                 dsm_meta = dsm_src.meta.copy()
                 dsm_nodata = dsm_src.nodata if dsm_src.nodata is not None else -9999
 
@@ -374,9 +375,13 @@ def generate_chm(input_folder, output_folder, run_name):
                     dst_nodata=dsm_nodata
                 )
 
+                #Mask DTM where dsm_mask is 0
+                dtm_aligned[dsm_mask == 0] = dsm_nodata
+
                 # Compute CHM
                 chm = dsm - dtm_aligned
                 chm[(dsm == dsm_nodata) | (dtm_aligned == dsm_nodata)] = dsm_nodata
+                
 
                 # Update metadata
                 dsm_meta.update({

@@ -42,7 +42,7 @@ class Configuration:
         # ------- PROCESSING --------
 
         self.create_DSM = False
-        self.create_DEM = True
+        self.create_DEM = False
         self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
@@ -61,8 +61,8 @@ class Configuration:
         self.smrf_scalar = 0.5 # scalar for SMRF filter, the higher the more vegetation is removed
 
         self.csf_rigidness = 1 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
-        self.csf_iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
-        self.csf_time_step = 0.65 # time step of the simulation, the lower the more accurate, but slower
+        self.csf_iterations = 1000 # number of simulation steps, the higher, the more adapted to the point cloud
+        self.csf_time_step = 0.75 # time step of the simulation, the lower the more accurate, but slower
         self.csf_cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
 
         # ------ VALIDATION ------

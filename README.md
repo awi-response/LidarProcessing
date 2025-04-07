@@ -13,6 +13,22 @@ The code is structured around three main steps in the pipeline:
 These steps are orchestrated by `main.py` and rely on helper methods in the `/core` directory.  
 Configuration settings are stored in `/config/` and are initialized in `main.py`.
 
+## **Folder Structure**
+
+```
+project_root/
+├── 01_target_areas/           # Vector footprints of target AOIs (e.g. shapefiles or GeoJSON)
+├── 02_pointclouds/            # Raw LiDAR point clouds (*.las or *.laz)
+├── 03_las_footprints/         # Flight path footprints (generated if missing)
+├── 04_preprocessed/           # Cleaned point clouds after outlier removal
+├── 05_results/                # Output rasters from processing
+│   └── <run_name>/            
+│       ├── DSM/               # Digital Surface Models
+│       ├── DTM/               # Digital Terrain Models
+│       └── CHM/               # Canopy Height Models (DSM - DTM)
+├── 06_validation/             # External raster or vector data used for validation
+```
+
 ## **Pipeline Overview**  
 ### **1. Preprocessing**  
 - Assigns LiDAR point clouds to user-defined target areas (e.g., aerial image footprints or AOIs).  
@@ -46,11 +62,12 @@ or using Conda:
 ```bash
 conda install -c conda-forge pdal laspy shapely geopandas rasterio numpy scipy tqdm
 ```
+But the easiest way is to use the `example_env.yml`.
 
 ## **Usage**  
 ### **1. Configure Settings**  
 Before running the pipeline, update the paths and parameters in `config.py`.  
-You can create **separate config files** for different datasets or use cases and select them in `main.py`.  
+You can create **separate config files** for different datasets or use cases and select them in `main.py`. 
 
 ### **2. Run the Pipeline**  
 To process LiDAR data from start to finish, simply run:  
