@@ -1,7 +1,7 @@
 # **LidarProcessing**  
 A pipeline to process LiDAR point clouds from aerial campaigns into **Digital Elevation Models (DEMs)**. Currently DSM, DTM and CHM generation are supported.
 
-![Data Products](Layout%201.png)
+![Data Products](examples.png)
 
 ## **Project Structure**  
 The code is structured around three main steps in the pipeline:  
