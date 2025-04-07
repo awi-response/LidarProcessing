@@ -23,7 +23,7 @@ def create_chunks_from_wkt(target_geom_wkt, chunk_size=100):
     
     return chunks
 
-def process_chunk(input_file, chunk_bbox, temp_dir, mean_z, max_elev=10000, sor_knn=8, sor_multiplier=2.0,  ref_scale=None, ref_offset=None, ref_crs=None):
+def process_chunk(input_file, chunk_bbox, temp_dir, max_z, min_z, sor_knn=8, sor_multiplier=2.0,  ref_scale=None, ref_offset=None, ref_crs=None):
     """Process a chunk with SOR filtering and save it to a temp folder."""
     chunk_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(chunk_bbox.bounds[0])}_{int(chunk_bbox.bounds[1])}.las")
     
@@ -31,7 +31,7 @@ def process_chunk(input_file, chunk_bbox, temp_dir, mean_z, max_elev=10000, sor_
         {"type": "readers.las", "filename": input_file},
         {"type": "filters.crop", "polygon": wkt_dumps(chunk_bbox)},
         {"type": "filters.outlier", "method": "statistical", "mean_k": sor_knn, "multiplier": sor_multiplier},
-        {"type": "filters.range", "limits": f"Z[{mean_z - max_elev}:{mean_z +  max_elev}]"},
+        {"type": "filters.range", "limits": f"Z[{min_z}:{max_z}]"},
         {"type": "filters.range", "limits": "Classification![7:7]"},
         {"type": "writers.las",
             "filename": chunk_file,

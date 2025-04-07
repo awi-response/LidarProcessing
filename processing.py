@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.spatial import KDTree
 import rasterio
 import shutil 
+from rasterio.warp import reproject, Resampling
 import laspy
 from shapely.geometry import box
 import multiprocessing
@@ -325,7 +326,7 @@ def generate_dtm(input_folder, output_folder, run_name, resolution, chunk_size, 
 
 def generate_chm(input_folder, output_folder, run_name):
     dsm_folder = os.path.join(input_folder, run_name, "DSM")
-    DTM_folder = os.path.join(input_folder, run_name, "DTM")
+    dtm_folder = os.path.join(input_folder, run_name, "DTM")
     chm_folder = os.path.join(output_folder, run_name, "CHM")
     os.makedirs(chm_folder, exist_ok=True)
 
@@ -341,45 +342,57 @@ def generate_chm(input_folder, output_folder, run_name):
     for dsm_path in tqdm(dsm_files, desc="Processing CHMs", unit="file"):
         try:
             base_name = os.path.splitext(os.path.basename(dsm_path))[0].replace("_DSM", "")
-            DTM_path = os.path.join(DTM_folder, f"{base_name}.tif")
+            dtm_path = os.path.join(dtm_folder, f"{base_name}.tif")
             chm_output_path = os.path.join(chm_folder, f"{base_name}_CHM.tif")
 
             if os.path.exists(chm_output_path):
                 print(f"Skipping {base_name}: CHM already exists.")
                 continue
 
-            if not os.path.exists(DTM_path):
+            if not os.path.exists(dtm_path):
                 print(f"Skipping {base_name}: Corresponding DTM not found.")
                 continue
 
-            with rasterio.open(dsm_path) as dsm_src, rasterio.open(DTM_path) as DTM_src:
+            with rasterio.open(dsm_path) as dsm_src, rasterio.open(dtm_path) as dtm_src:
+                # Read DSM
                 dsm = dsm_src.read(1)
-                dtm = DTM_src.read(1)
+                dsm_meta = dsm_src.meta.copy()
+                dsm_nodata = dsm_src.nodata if dsm_src.nodata is not None else -9999
 
-                # Clip to the overlapping region if shapes differ
-                if dsm.shape != dtm.shape:
-                    min_height = min(dsm.shape[0], dtm.shape[0])
-                    min_width = min(dsm.shape[1], dtm.shape[1])
-                    dsm = dsm[:min_height, :min_width]
-                    dtm = dtm[:min_height, :min_width]
-                    print(f"[INFO] Clipped rasters to shape: ({min_height}, {min_width})")
+                # Prepare DTM to be aligned to DSM grid
+                dtm_aligned = np.full((dsm_src.height, dsm_src.width), dsm_nodata, dtype=np.float32)
 
-                chm = dsm - dtm
-                chm[dsm == dsm_src.nodata] = dsm_src.nodata
-                chm[dtm == DTM_src.nodata] = DTM_src.nodata
+                reproject(
+                    source=rasterio.band(dtm_src, 1),
+                    destination=dtm_aligned,
+                    src_transform=dtm_src.transform,
+                    src_crs=dtm_src.crs,
+                    dst_transform=dsm_src.transform,
+                    dst_crs=dsm_src.crs,
+                    resampling=Resampling.bilinear,
+                    src_nodata=dtm_src.nodata,
+                    dst_nodata=dsm_nodata
+                )
 
-                chm_meta = dsm_src.meta.copy()
-                chm_meta.update(dtype=rasterio.float32, height=chm.shape[0], width=chm.shape[1])
+                # Compute CHM
+                chm = dsm - dtm_aligned
+                chm[(dsm == dsm_nodata) | (dtm_aligned == dsm_nodata)] = dsm_nodata
 
-                with rasterio.open(chm_output_path, "w", **chm_meta) as chm_dst:
-                    chm_dst.write(chm.astype(rasterio.float32), 1)
+                # Update metadata
+                dsm_meta.update({
+                    "dtype": "float32",
+                    "nodata": dsm_nodata,
+                    "compress": "lzw"
+                })
+
+                with rasterio.open(chm_output_path, "w", **dsm_meta) as chm_dst:
+                    chm_dst.write(chm.astype(np.float32), 1)
 
         except Exception as e:
-            print(f"Error processing {base_name}: {e}")
+            print(f"[ERROR] Failed to process {base_name}: {e}")
 
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nCHM generation completed in {elapsed_time}.")
-
 
 
 def process_all(config):

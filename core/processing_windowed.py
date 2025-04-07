@@ -115,19 +115,17 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
     if filter_smrf:
 
         pipeline.append({"type": "filters.smrf",
-         "scalar": scalar,
-         "slope": slope,
-         "window": window,
-         "threshold": threshold,})
+         "scalar": float(scalar),
+         "slope": float(slope),
+         "window": float(window)})
         
     if filter_csf:
         pipeline.append(
         {"type": "filters.csf",
          "resolution": float(cloth_resolution),
-         "rigidness": rigidness,
-         "iterations": iterations,
-         "step": time_step,
-         "threshold": threshold,})
+         "rigidness": int(rigidness),
+         "iterations": int(iterations),
+         "step": float(time_step)})
         
     pipeline += [
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
@@ -144,7 +142,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
     try:
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
     except RuntimeError as e:
-        print(f"[ERROR] PDAL execution failed: {e}")
+        print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
         return None
 
     resampled_file = chunk_file.replace('.tif', '_resampled.tif')
@@ -173,7 +171,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         try:
             subprocess.run([
                 "gdal_fillnodata.py",
-                "-md", "10",
+                "-md", "100",
                 "-si", "2",
                 chunk_file,
                 chunk_file

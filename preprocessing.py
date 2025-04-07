@@ -154,12 +154,20 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
             target_geom_wkt = wkt_dumps(shape(gdf.geometry.iloc[0]))
             chunks = create_chunks_from_wkt(target_geom_wkt, chunk_size)
 
-            all_z = laspy.read(input_file).z
-            mean_z = np.mean(all_z)
+            if max_elev:
+
+                all_z = laspy.read(input_file).z
+                max_z = np.quantile(all_z, max_elev)
+                min_z = np.quantile(all_z, 1 - max_elev)
+
+            else:
+                all_z = laspy.read(input_file).z
+                max_z = np.max(all_z)
+                min_z = np.min(all_z)
 
 
             for chunk in chunks:
-                process_args.append((input_file, chunk, temp_dir, mean_z, max_elev, sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs))
+                process_args.append((input_file, chunk, temp_dir, max_z, min_z, sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs))
 
         with tqdm(total=len(process_args), desc=f"Processing {target_fp}", unit="chunk") as pbar:
             with Pool(processes=num_workers) as pool:

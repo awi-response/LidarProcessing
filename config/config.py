@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Peelreprocessed'  # Custom name for this run
+        self.run_name = 'test_for_presenataion'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
@@ -33,7 +33,7 @@ class Configuration:
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
         self.target_name_field = 'target_area'  # Field in target area gdf to use as target name
 
-        self.max_elevation_threshold = 500 # threshold to remove outliers from MTA/atmosphere, when outside of median elevation +/- threshold, the point is removed. 
+        self.max_elevation_threshold = 0.99 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
 
         # SOR parameters
         self.knn = 100  # number of k nearest neighbors, the higher the more stable
@@ -56,13 +56,13 @@ class Configuration:
         self.csf_filter = True # use cloth simulation method
         self.threshold = 0.5 # threshold for filters
 
-        self.smrf_window_size = 5 # window size for SMRF filter, the higher the more vegetation is removed
+        self.smrf_window_size = 8 # window size for SMRF filter, the higher the more vegetation is removed
         self.smrf_slope = 0.15 # slope for SMRF filter, the higher the more vegetation is removed
-        self.smrf_scalar = 1.25 # scalar for SMRF filter, the higher the more vegetation is removed
+        self.smrf_scalar = 0.5 # scalar for SMRF filter, the higher the more vegetation is removed
 
         self.csf_rigidness = 1 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
         self.csf_iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
-        self.csf_time_step = 0.9 # time step of the simulation, the lower the more accurate, but slower
+        self.csf_time_step = 0.65 # time step of the simulation, the lower the more accurate, but slower
         self.csf_cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
 
         # ------ VALIDATION ------
@@ -85,7 +85,7 @@ class Configuration:
 
         # _______ Processing _______
         self.chunk_size = 1000 # chunk in meters
-        self.chunk_overlap = 0.1 # overlap between chunks in percentage, 0.2 means 20% overlap
+        self.chunk_overlap = 0.2 # overlap between chunks in percentage, 0.2 means 20% overlap
         self.num_workers = 32  # Number of parallel workers for processing
 
         # Set overall GDAL settings
