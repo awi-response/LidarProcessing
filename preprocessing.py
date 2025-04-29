@@ -55,12 +55,12 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
 
     target_dict = {}
 
-    for target_fp in target_footprints:
+    for target_fp in tqdm(target_footprints, desc="Finding target areas", unit="areas"):
         target_gdf = gpd.read_file(target_fp)
         target_name = os.path.splitext(os.path.basename(target_fp))[0]
         las_paths = []
 
-        for las_fp in las_footprints:
+        for las_fp in tqdm(las_footprints, desc="Checking LAS footprints", unit="footprints"):
             las_gdf = gpd.read_file(las_fp)
             if target_gdf.crs != las_gdf.crs:
                 las_gdf = las_gdf.to_crs(target_gdf.crs)

@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'test_for_presenataion'  # Custom name for this run
+        self.run_name = 'Katrins_Run'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
@@ -31,7 +31,7 @@ class Configuration:
         # ------ PREPROCESSING ------
 
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
-        self.target_name_field = 'target_area'  # Field in target area gdf to use as target name
+        self.target_name_field = 'layer'  # Field in target area gdf to use as target name
 
         self.max_elevation_threshold = 0.99 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
 
@@ -41,8 +41,8 @@ class Configuration:
 
         # ------- PROCESSING --------
 
-        self.create_DSM = False
-        self.create_DEM = False
+        self.create_DSM = True
+        self.create_DEM = True
         self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
@@ -80,8 +80,8 @@ class Configuration:
         self.overlap = 0.2  # minimum overlap between pointcloud and AOI, 0.5 means 50% overlap
 
         self.filter_date = False  # Filter las files by date
-        self.start_date = '2023-07-01'  # Start date for filtering las files
-        self.end_date = '2023-07-30'  # End date for filtering las files
+        self.start_date = '2023-07-22'  # Start date for filtering las files
+        self.end_date = '2023-07-20'  # End date for filtering las files
 
         # _______ Processing _______
         self.chunk_size = 1000 # chunk in meters
