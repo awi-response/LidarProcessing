@@ -84,7 +84,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
         #print("[INFO] PDAL execution completed.")
     except RuntimeError as e:
-        print(f"[ERROR] PDAL execution failed: {e}")
+        #print(f"[ERROR] PDAL execution failed: {e}")
         return None
 
     try:
@@ -142,7 +142,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
     try:
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
     except RuntimeError as e:
-        print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
+        #print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
         return None
 
     resampled_file = chunk_file.replace('.tif', '_resampled.tif')
