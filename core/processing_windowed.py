@@ -33,6 +33,10 @@ def create_chunks_from_wkt(input_wkt, chunk_size=1000, overlap=0.2):
             if geom.intersects(orig_chunk_box):
                 large_chunks.append(large_chunk_bbox)
                 orig_chunk_size.append(orig_chunk_box)
+
+    #check if chunk intersects with original geometry, just take intersecting chunks
+    large_chunks = [chunk for chunk in large_chunks if geom.intersects(chunk)]
+    orig_chunk_size = [chunk for chunk in orig_chunk_size if geom.intersects(chunk)]
     
     return large_chunks, orig_chunk_size
 
@@ -84,7 +88,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
         #print("[INFO] PDAL execution completed.")
     except RuntimeError as e:
-        #print(f"[ERROR] PDAL execution failed: {e}")
+        print(f"[ERROR] PDAL execution failed: {e}. Empty chunk.")
         return None
 
     try:
@@ -142,7 +146,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
     try:
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
     except RuntimeError as e:
-        #print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
+        print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
         return None
 
     resampled_file = chunk_file.replace('.tif', '_resampled.tif')
