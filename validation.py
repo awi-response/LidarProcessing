@@ -180,7 +180,7 @@ def validate_all(conf):
     print("\n--- Sampling DEM Values ---")
     combined = get_dem_value(config.results_dir, config.validation_target, output, config.run_name)
 
-    combined = combined.groupby('raster_name', group_keys=False).sample(n=config.sample_size, random_state=42)
+    combined = combined.groupby('raster_name', group_keys=False).sample(n=config.sample_size, random_state=42, replace=True)
 
 
     val_run_dir = os.path.join(config.validation_dir, config.run_name)

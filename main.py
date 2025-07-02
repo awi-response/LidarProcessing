@@ -10,6 +10,6 @@ if __name__ == '__main__':
     #
     #preprocessing.preprocess_all(config)
 
-    processing.process_all(config)
+    #processing.process_all(config)
 
-    #validation.validate_all(config)
+    validation.validate_all(config)
