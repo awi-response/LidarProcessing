@@ -9,6 +9,7 @@ from multiprocessing import Pool
 import pdal
 import laspy
 import numpy as np
+from matplotlib import pyplot as plt
 import geopandas as gpd
 from tqdm import tqdm
 from shapely.geometry import shape
@@ -33,8 +34,33 @@ def get_las_header(las_file):
 def process_chunk_wrapper(args):
     return process_chunk(*args)
 
+def plot_target_and_footprints(target_gdf, matched_las_paths, las_footprint_dir, output_path):
+    fig, ax = plt.subplots(figsize=(10, 10))
 
-def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, threshold=0.5, filter_date=True, start_date=None, end_date=None):
+    # Plot target area in red
+    target_gdf.plot(ax=ax, edgecolor='black', facecolor='none', linewidth=2, label='Target Area')
+
+    # Overlay LAS footprints in blue
+    for las_path in matched_las_paths:
+        las_name = os.path.splitext(os.path.basename(las_path))[0]
+        las_fp_path = os.path.join(las_footprint_dir, las_name + ".gpkg")
+        if os.path.exists(las_fp_path):
+            las_gdf = gpd.read_file(las_fp_path)
+            if las_gdf.crs != target_gdf.crs:
+                las_gdf = las_gdf.to_crs(target_gdf.crs)
+            las_gdf.plot(ax=ax, facecolor='blue', edgecolor='blue', alpha=0.3, label='Matched LAS Footprint')
+
+    plt.title('Target Area and Matched LAS Footprints')
+    plt.xlabel('Longitude')
+    plt.ylabel('Latitude')
+    plt.legend(loc='best')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
+
+def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_dir, threshold=0.5, filter_date=True, start_date=None, end_date=None):
     os.makedirs(las_footprint_dir, exist_ok=True)
 
     print("\nMatching Lidar footprints...")
@@ -96,6 +122,7 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
                                         continue
                                 else:
                                     continue  # Skip if no creation date
+
                             except Exception as e:
                                 print(f"Failed to read LAS header from {las_path}: {e}")
                                 continue
@@ -103,7 +130,14 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, thre
                         las_paths.append(las_path)
 
         target_dict[target_name] = las_paths
+
+        if las_paths:
+            output_plot_path = os.path.join(out_dir, f"{target_name}_footprints.png")
+            plot_target_and_footprints(target_gdf, las_paths, las_footprint_dir, output_plot_path)
+
+
         print(f"Target area: {target_name}, LAS files found: {len(las_paths)}")
+
 
     print(f"Footprint matching completed in {timedelta(seconds=int(time.time() - start))}. Found {len(target_dict)} target areas.")
     return target_dict
@@ -214,11 +248,15 @@ def preprocess_all(conf):
                 split_gpkg(os.path.join(config.target_area_dir, gdf_name), config.target_area_dir, field_name=config.target_name_field)
             break
 
+    
+    out_dir = os.path.join(config.preprocessed_dir, config.run_name)
+
     print("\n--- Matching footprints to LAS files ---")
     target_dict = match_footprints(
         target_footprint_dir=config.target_area_dir,
         las_footprint_dir=config.las_footprints_dir,
         las_file_dir=config.las_files_dir,
+        out_dir=out_dir,
         threshold=config.overlap,
         filter_date=config.filter_date,
         start_date=config.start_date,

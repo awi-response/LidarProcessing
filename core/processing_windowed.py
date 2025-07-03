@@ -186,10 +186,6 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
 
     return chunk_file
 
-
-
-
-
 def merge_chunks(input_files, output_file):
     """
     Merges multiple raster files into a single raster and saves the output.
@@ -219,9 +215,12 @@ def merge_chunks(input_files, output_file):
     # Write the merged raster to disk
     with rasterio.open(output_file, "w", **out_meta) as dest:
         dest.write(mosaic)
+
+    nodata_val = out_meta.get("nodata", None)
     
     # Close all source files
     for src in src_files:
         src.close()
+
     
     #Sprint(f"Merged raster saved at: {output_file}")

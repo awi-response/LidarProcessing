@@ -11,6 +11,7 @@ from tqdm import tqdm
 from scipy.spatial import KDTree
 import rasterio
 import shutil 
+from matplotlib import pyplot as plt
 from rasterio.warp import reproject, Resampling
 import laspy
 from shapely.geometry import box
@@ -160,7 +161,7 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
     for las_file in las_files:
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         temp_dsm_dir = os.path.join(temp_folder, base_name)
-        final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+        final_dsm_path = os.path.join(final_output_folder, f"{base_name}_DSM.tif")
 
         chunk_files = sorted(glob.glob(os.path.join(temp_dsm_dir, "*.tif")))
         if not chunk_files:
@@ -174,6 +175,22 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             os.replace(filled_dsm_path, final_dsm_path)
 
+        #read output file for plotting
+        with rasterio.open(final_dsm_path) as src:
+            dsm_data = src.read(1)
+            dsm_nodata = src.nodata if src.nodata is not None else np.nan
+            dsm_data = np.where(dsm_data == dsm_nodata, np.nan, dsm_data)
+
+        # Plot the merged DSM and save as PNG
+        plt.figure(figsize=(10, 10))
+        plt.imshow(dsm_data, cmap='terrain', vmin=np.nanpercentile(dsm_data, 2), vmax=np.nanpercentile(dsm_data, 98))
+        plt.colorbar(label='Elevation (m)')
+        plt.title(f'DSM: {base_name}')
+        plt.axis('off')
+        plt.savefig(os.path.join(final_output_folder, f"{base_name}_DSM.png"), bbox_inches='tight', pad_inches=0.1)
+        plt.close()  # Ensure we close the plot to free memory
+
+
         shutil.rmtree(temp_dsm_dir, ignore_errors=True)
 
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
@@ -182,7 +199,7 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
 
 def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, time_step, cloth_resolution, counter, chunk_size, chunk_overlap):
     base_name = os.path.splitext(os.path.basename(las_file))[0]
-    final_dtm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+    final_dtm_path = os.path.join(final_output_folder, f"{base_name}_DTM.tif")
     if os.path.exists(final_dtm_path):
         print(f"Skipping {base_name}: DTM already exists.")
         if counter is not None:
@@ -227,17 +244,17 @@ def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution,
     
     if temp_dtm_dir:
         chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
-        merged_dsm = merge_chunks(chunk_files, final_dtm_path)
+        merged_dtm = merge_chunks(chunk_files, final_dtm_path)
         
-        if fill_gaps and merged_dsm:
-            filled_dsm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
+        if fill_gaps and merged_dtm:
+            filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
             subprocess.run(
-                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dsm, filled_dsm_path],
+                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            os.replace(filled_dsm_path, final_dtm_path)
+            os.replace(filled_dtm_path, final_dtm_path)
         else:
             print(f"No chunks found for {base_name}. Skipping merge.")
     
@@ -299,7 +316,7 @@ def generate_dtm(input_folder, output_folder, run_name, resolution, chunk_size, 
     for las_file in las_files:
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         temp_dtm_dir = os.path.join(temp_folder, base_name)
-        final_dtm_path = os.path.join(final_output_folder, f"{base_name}.tif")
+        final_dtm_path = os.path.join(final_output_folder, f"{base_name}_DTM.tif")
         
         chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
         if not chunk_files:
@@ -309,14 +326,29 @@ def generate_dtm(input_folder, output_folder, run_name, resolution, chunk_size, 
         merged_dtm = merge_chunks(chunk_files, final_dtm_path)
         
         if fill_gaps and merged_dtm:
-            filled_dsm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
+            filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
             subprocess.run(
-                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dsm_path],
+                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            os.replace(filled_dsm_path, final_dtm_path)
+            os.replace(filled_dtm_path, final_dtm_path)
+
+        with rasterio.open(final_dtm_path) as src:
+            dtm_data = src.read(1)
+            dtm_nodata = src.nodata if src.nodata is not None else np.nan
+            dtm_data = np.where(dtm_data == dtm_nodata, np.nan, dtm_data)
+
+        # Plot the merged DSM and save as PNG
+        plt.figure(figsize=(10, 10))
+        plt.imshow(dtm_data, cmap='terrain', vmin=np.nanpercentile(dtm_data, 2), vmax=np.nanpercentile(dtm_data, 98))
+        plt.colorbar(label='Elevation (m)')
+        plt.title(f'DSM: {base_name}')
+        plt.axis('off')
+        plt.savefig(os.path.join(final_output_folder, f"{base_name}_DTM.png"), bbox_inches='tight', pad_inches=0.1)
+        plt.close()  # Ensure we close the plot to free memory
+
         
         shutil.rmtree(temp_dtm_dir, ignore_errors=True)
     
@@ -342,12 +374,12 @@ def generate_chm(input_folder, output_folder, run_name):
     for dsm_path in tqdm(dsm_files, desc="Processing CHMs", unit="file"):
         try:
             base_name = os.path.splitext(os.path.basename(dsm_path))[0].replace("_DSM", "")
-            dtm_path = os.path.join(dtm_folder, f"{base_name}.tif")
+            dtm_path = os.path.join(dtm_folder, f"{base_name}_DTM.tif")
             chm_output_path = os.path.join(chm_folder, f"{base_name}_CHM.tif")
 
-            if os.path.exists(chm_output_path):
-                print(f"Skipping {base_name}: CHM already exists.")
-                continue
+            #if os.path.exists(chm_output_path):
+            #    print(f"Skipping {base_name}: CHM already exists.")
+            #    continue
 
             if not os.path.exists(dtm_path):
                 print(f"Skipping {base_name}: Corresponding DTM not found.")
@@ -358,7 +390,7 @@ def generate_chm(input_folder, output_folder, run_name):
                 dsm = dsm_src.read(1)
                 dsm_mask = dsm_src.read_masks(1)
                 dsm_meta = dsm_src.meta.copy()
-                dsm_nodata = dsm_src.nodata if dsm_src.nodata is not None else -9999
+                dsm_nodata = dsm_src.nodata if dsm_src.nodata is not None else np.nan
 
                 # Prepare DTM to be aligned to DSM grid
                 dtm_aligned = np.full((dsm_src.height, dsm_src.width), dsm_nodata, dtype=np.float32)
@@ -393,6 +425,18 @@ def generate_chm(input_folder, output_folder, run_name):
                 with rasterio.open(chm_output_path, "w", **dsm_meta) as chm_dst:
                     chm_dst.write(chm.astype(np.float32), 1)
 
+                # plot merged_dsm and save as png
+                # set dsm_nodata to np.nan for plotting
+                chm = np.where(chm == dsm_nodata, np.nan, chm)
+
+                plt.figure(figsize=(10, 10))
+                plt.imshow(chm, cmap='viridis', vmin=np.nanpercentile(chm, 2), vmax=np.nanpercentile(chm, 98))
+                plt.colorbar(label='Elevation (m)')
+                plt.title(f'CHM: {base_name}')
+                plt.axis('off')
+                plt.savefig(os.path.join(chm_folder, f"{base_name}_CHM.png"), bbox_inches='tight', pad_inches=0.1)
+                plt.close()
+
         except Exception as e:
             print(f"[ERROR] Failed to process {base_name}: {e}")
 
@@ -405,7 +449,7 @@ def process_all(config):
     Runs DSM generation using cleaned LAS files.
 
     Reads from: `config.preprocessed_dir`
-    Saves to: `config.results_dir / run_name / DSM/`
+    Saves to: `config.results_dir / run_name / .../`
     """
     print('Starting Processing ...')
 

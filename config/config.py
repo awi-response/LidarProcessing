@@ -15,7 +15,7 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Katrins_Run_geoid_additional'  # Custom name for this run
+        self.run_name = 'PErma-X-2024'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
@@ -33,7 +33,7 @@ class Configuration:
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
         self.target_name_field = 'NAME'  # Field in target area gdf to use as target name
 
-        self.max_elevation_threshold = 0.98 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
+        self.max_elevation_threshold = 0.97 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
 
         # SOR parameters
         self.knn = 100  # number of k nearest neighbors, the higher the more stable
@@ -41,8 +41,8 @@ class Configuration:
 
         # ------- PROCESSING --------
 
-        self.create_DSM = False
-        self.create_DEM = False
+        self.create_DSM = True
+        self.create_DEM = True
         self.create_CHM = True
 
         self.fill_gaps = True # use IDW to close gaps in rasters
@@ -60,7 +60,7 @@ class Configuration:
         self.smrf_slope = 0.5 # slope for SMRF filter, the higher the more vegetation is removed
         self.smrf_scalar = 2 # scalar for SMRF filter, the higher the more vegetation is removed
 
-        self.csf_rigidness = 1 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
+        self.csf_rigidness = 2 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
         self.csf_iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
         self.csf_time_step = 0.75 # time step of the simulation, the lower the more accurate, but slower
         self.csf_cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
@@ -86,7 +86,7 @@ class Configuration:
         # _______ Processing _______
         self.chunk_size = 500 # chunk in meters
         self.chunk_overlap = 0.1 # overlap between chunks in percentage, 0.2 means 20% overlap
-        self.num_workers =8  # Number of parallel workers for processing
+        self.num_workers = 32  # Number of parallel workers for processing
 
         # Set overall GDAL settings
         gdal.UseExceptions()  # Enable exceptions instead of silent failures
