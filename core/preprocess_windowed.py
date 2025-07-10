@@ -46,7 +46,7 @@ def process_chunk(
         f"{base}_chunk_{int(chunk_bbox.bounds[0])}_{int(chunk_bbox.bounds[1])}.las"
     )
 
-    # find which vertical-ellipsoid code goes with your horizontal CRS
+    #find which vertical-ellipsoid code goes with your horizontal CRS
     hcrs = CRS.from_epsg(ref_crs)
     datum = hcrs.datum.name.lower()
     if "wgs 84" in datum:
@@ -75,11 +75,11 @@ def process_chunk(
         {"type": "filters.crop", "polygon": wkt_dumps(chunk_bbox)},
 
         # remove statistical outliers
-        #{"type": "filters.outlier",
-        # "method": "statistical",
-        # "mean_k": sor_knn,
+        {"type": "filters.outlier",
+         "method": "statistical",
+         "mean_k": sor_knn,
         # "multiplier": sor_multiplier
-        #},
+        },
 
         # clamp to your Z-range (now orthometric)
         {"type": "filters.range", "limits": f"Z[{min_z}:{max_z}]"},

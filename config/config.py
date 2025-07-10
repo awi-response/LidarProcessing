@@ -15,13 +15,13 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'lol3'  # Custom name for this run
+        self.run_name = 'PErma-X-2024'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
         self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas'  # Path to vector footprints of target areas
-        self.las_files_dir = '/isipd/projects/p_planetdw/data/lidar/test'  # Path to lidar point clouds (*.las/*.laz)
-        self.las_footprints_dir = '/isipd/projects/p_planetdw/data/lidar/fp'  # Path to footprints of flight paths, if not available will be generated
+        self.las_files_dir = '/isipd/projects/p_planetdw/data/lidar/02_pointclouds'  # Path to lidar point clouds (*.las/*.laz)
+        self.las_footprints_dir = '/isipd/projects/p_planetdw/data/lidar/03_las_footprints'  # Path to footprints of flight paths, if not available will be generated
 
         # Output directories
         self.preprocessed_dir = '/isipd/projects/p_planetdw/data/lidar/04_preprocessed'  # Path for preprocessed lidar data
@@ -33,11 +33,11 @@ class Configuration:
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
         self.target_name_field = 'NAME'  # Field in target area gdf to use as target name
 
-        self.max_elevation_threshold = 0.99999999 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
+        self.max_elevation_threshold = 0.97 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
 
         # SOR parameters
-        self.knn = 1  # number of k nearest neighbors, the higher the more stable
-        self.multiplier = 1000 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
+        self.knn = 100  # number of k nearest neighbors, the higher the more stable
+        self.multiplier = 2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
 
         # ------- PROCESSING --------
 
