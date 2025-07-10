@@ -10,11 +10,14 @@ from datetime import timedelta
 from tqdm import tqdm
 from scipy.spatial import KDTree
 import rasterio
+import signal
+import functools
 import shutil 
 from matplotlib import pyplot as plt
 from rasterio.warp import reproject, Resampling
 import laspy
 from shapely.geometry import box
+from multiprocessing import get_context
 import multiprocessing
 from shapely.wkt import loads as wkt_loads, dumps as wkt_dumps
 
@@ -63,7 +66,6 @@ def check_resolution(las_file, resolution, method="sampling", num_samples=10000)
 
     return avg_distance, avg_distance <= resolution
 
-
 def get_las_footprint_wkt(las_file):
     """Extracts the WKT footprint (bounding box) from a LAS file."""
     
@@ -75,55 +77,13 @@ def get_las_footprint_wkt(las_file):
     footprint = box(min_x, min_y, max_x, max_y)
     return footprint.wkt  # Convert to WKT format
 
-def process_las_file_dsm(las_file, temp_folder, final_output_folder, resolution, method, fill_gaps, counter, chunk_size, chunk_overlap):
-    base_name = os.path.splitext(os.path.basename(las_file))[0]
-    final_dsm_path = os.path.join(final_output_folder, f"{base_name}.tif")
-
-    # Skip if DSM already exists
-    if os.path.exists(final_dsm_path):
-        print(f"Skipping {base_name}: DSM already exists.")
-        counter.value += 1
-        return final_dsm_path
-
-    target_wkt = get_las_footprint_wkt(las_file)
-    avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
-    if not is_resolution_ok:
-        print(f"Warning: DSM resolution ({resolution}m) is finer than average point spacing ({avg_spacing:.3f}m).")
-
-    temp_dsm_dir = os.path.join(temp_folder, base_name)
-    os.makedirs(temp_dsm_dir, exist_ok=True)
-
-    large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size=chunk_size, overlap=chunk_overlap)
-    dsm_chunks = []
-
-    for large_chunk, small_chunk in tqdm(zip(large_chunks, small_chunks), desc=f"Processing Chunks ({base_name})", unit="chunk", leave=False):
-        chunk_dsm_path = process_chunk_to_dsm(las_file, large_chunk, small_chunk, temp_dsm_dir, resolution)
-        if chunk_dsm_path:
-            dsm_chunks.append(chunk_dsm_path)
-
-    if temp_dsm_dir:
-        chunk_files = sorted(glob.glob(os.path.join(temp_dsm_dir, "*.tif")))
-        merged_dsm = merge_chunks(chunk_files, final_dsm_path)
-
-        if fill_gaps and merged_dsm:
-            filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_filled.tif")
-            subprocess.run(["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dsm, filled_dsm_path],
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            os.replace(filled_dsm_path, final_dsm_path)
-
-    else:
-        print(f"No chunks found for {base_name}. Skipping merge.")
-
-    if os.path.exists(temp_dsm_dir):
-        shutil.rmtree(temp_dsm_dir, ignore_errors=True)
-
-    counter.value += 1
-    return final_dsm_path
 
 def process_dsm_chunk_wrapper(args):
-    las_file, large_chunk, small_chunk, output_dir, resolution = args
-    return process_chunk_to_dsm(las_file, large_chunk, small_chunk, output_dir, resolution)
-
+    try:
+        las_file, large_chunk, small_chunk, output_dir, resolution = args
+        return process_chunk_to_dsm(las_file, large_chunk, small_chunk, output_dir, resolution)
+    except Exception as e:
+        return print(f"Error processing chunk for {las_file}: {e}")
 
 def generate_dsm(input_folder, output_folder, run_name, method, resolution, chunk_size, chunk_overlap, num_workers, fill_gaps=True):
 
@@ -140,131 +100,74 @@ def generate_dsm(input_folder, output_folder, run_name, method, resolution, chun
         print("No LAS/LAZ files found. Exiting DSM generation.")
         return
 
-    chunk_tasks = []
-    for las_file in las_files:
+    for las_file in tqdm(las_files, desc="Processing LAS files", unit="file"):
         target_wkt = get_las_footprint_wkt(las_file)
-        avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
-        if not is_resolution_ok:
-            print(f"Warning: DSM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
+        #avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
+        #if not is_resolution_ok:
+        #    print(f"Warning: DSM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
 
-        base_name = os.path.splitext(os.path.basename(las_file))[0]
-        temp_dsm_dir = os.path.join(temp_folder, base_name)
-        os.makedirs(temp_dsm_dir, exist_ok=True)
 
-        large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size, chunk_overlap)
-        for large_chunk, small_chunk in zip(large_chunks, small_chunks):
-            chunk_tasks.append((las_file, large_chunk, small_chunk, temp_dsm_dir, resolution))
+        chunk_tasks = []
 
-    with multiprocessing.Pool(processes=num_workers) as pool:
-        list(tqdm(pool.imap(process_dsm_chunk_wrapper, chunk_tasks), total=len(chunk_tasks), desc="Processing DSM Chunks"))
-
-    for las_file in las_files:
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         temp_dsm_dir = os.path.join(temp_folder, base_name)
         final_dsm_path = os.path.join(final_output_folder, f"{base_name}_DSM.tif")
 
-        chunk_files = sorted(glob.glob(os.path.join(temp_dsm_dir, "*.tif")))
-        if not chunk_files:
-            print(f"No DSM chunks found for {base_name}. Skipping.")
-            continue
+        if not os.path.exists(final_dsm_path):
 
-        merged_dsm = merge_chunks(chunk_files, final_dsm_path)
-        if fill_gaps and merged_dsm:
-            filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_filled.tif")
-            subprocess.run(["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dsm, filled_dsm_path],
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            os.replace(filled_dsm_path, final_dsm_path)
+            print(f'saving temp files to {temp_dsm_dir}')
 
-        #read output file for plotting
-        with rasterio.open(final_dsm_path) as src:
-            dsm_data = src.read(1)
-            dsm_nodata = src.nodata if src.nodata is not None else np.nan
-            dsm_data = np.where(dsm_data == dsm_nodata, np.nan, dsm_data)
+            base_name = os.path.splitext(os.path.basename(las_file))[0]
+            temp_dsm_dir = os.path.join(temp_folder, base_name)
+            os.makedirs(temp_dsm_dir, exist_ok=True)
 
-        # Plot the merged DSM and save as PNG
-        plt.figure(figsize=(10, 10))
-        plt.imshow(dsm_data, cmap='terrain', vmin=np.nanpercentile(dsm_data, 2), vmax=np.nanpercentile(dsm_data, 98))
-        plt.colorbar(label='Elevation (m)')
-        plt.title(f'DSM: {base_name}')
-        plt.axis('off')
-        plt.savefig(os.path.join(final_output_folder, f"{base_name}_DSM.png"), bbox_inches='tight', pad_inches=0.1)
-        plt.close()  # Ensure we close the plot to free memory
+            large_chunks, small_chunks = create_chunks_from_wkt(target_wkt, chunk_size, chunk_overlap)
+            for large_chunk, small_chunk in zip(large_chunks, small_chunks):
+                chunk_tasks.append((las_file, large_chunk, small_chunk, temp_dsm_dir, resolution))
+
+            with multiprocessing.Pool(processes=num_workers) as pool:
+                list(tqdm(
+                    pool.imap_unordered(process_dsm_chunk_wrapper, chunk_tasks),
+                    total=len(chunk_tasks),
+                    desc="Processing DSM Chunks"))
 
 
-        shutil.rmtree(temp_dsm_dir, ignore_errors=True)
+            chunk_files = sorted(glob.glob(os.path.join(temp_dsm_dir, "*.tif")))
+            if not chunk_files:
+                print(f"No DSM chunks found for {base_name}. Skipping.")
+                continue
+
+            merged_dsm = merge_chunks(chunk_files, final_dsm_path)
+            if fill_gaps and merged_dsm:
+                filled_dsm_path = os.path.join(temp_dsm_dir, f"{base_name}_filled.tif")
+                subprocess.run(["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dsm, filled_dsm_path],
+                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                os.replace(filled_dsm_path, final_dsm_path)
+
+            #read output file for plotting
+            with rasterio.open(final_dsm_path) as src:
+                dsm_data = src.read(1)
+                dsm_nodata = src.nodata if src.nodata is not None else np.nan
+                dsm_data = np.where(dsm_data == dsm_nodata, np.nan, dsm_data)
+
+            # Plot the merged DSM and save as PNG
+            plt.figure(figsize=(10, 10))
+            plt.imshow(dsm_data, cmap='terrain', vmin=np.nanpercentile(dsm_data, 2), vmax=np.nanpercentile(dsm_data, 98))
+            plt.colorbar(label='Elevation (m)')
+            plt.title(f'DSM: {base_name}')
+            plt.axis('off')
+            plt.savefig(os.path.join(final_output_folder, f"{base_name}_DSM.png"), bbox_inches='tight', pad_inches=0.1, dpi=300)
+            plt.close()  # Ensure we close the plot to free memory
+
+
+            shutil.rmtree(temp_dsm_dir, ignore_errors=True)
+
+        else:
+            print(f"Skipping {base_name}: File already exists.")
 
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nDSM generation completed in {elapsed_time}.")
 
-
-def process_las_file_dem(las_file, temp_folder, final_output_folder, resolution, method, rigidness, iterations, fill_gaps, time_step, cloth_resolution, counter, chunk_size, chunk_overlap):
-    base_name = os.path.splitext(os.path.basename(las_file))[0]
-    final_dtm_path = os.path.join(final_output_folder, f"{base_name}_DTM.tif")
-    if os.path.exists(final_dtm_path):
-        print(f"Skipping {base_name}: DTM already exists.")
-        if counter is not None:
-            counter.value += 1
-        return final_dtm_path
-    
-    target_wkt = get_las_footprint_wkt(las_file)
-    avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
-    if not is_resolution_ok:
-        print(f"Warning: DTM resolution ({resolution}m) is finer than average point spacing ({avg_spacing:.3f}m).")
-    
-    temp_dtm_dir = os.path.join(temp_folder, base_name)
-    os.makedirs(temp_dtm_dir, exist_ok=True)
-    
-    large_chunks, small_chunks = create_chunks_from_wkt(
-        target_wkt,
-        chunk_size=chunk_size,
-        overlap=chunk_overlap
-    )
-    
-    dtm_chunks = []
-    for large_chunk, small_chunk in tqdm(
-        zip(large_chunks, small_chunks),
-        desc=f"Processing Chunks ({base_name})",
-        unit="chunk",
-        leave=False
-    ):
-        chunk_dtm_path = process_chunk_to_dem(
-            las_file=las_file,
-            large_chunk=large_chunk,
-            small_chunk=small_chunk,
-            temp_dir=temp_dtm_dir,
-            rigidness=rigidness,
-            iterations=iterations,
-            resolution=resolution,
-            time_step=time_step,
-            cloth_resolution=cloth_resolution,
-            fill_gaps=fill_gaps
-        )
-        if chunk_dtm_path:
-            dtm_chunks.append(chunk_dtm_path)
-    
-    if temp_dtm_dir:
-        chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
-        merged_dtm = merge_chunks(chunk_files, final_dtm_path)
-        
-        if fill_gaps and merged_dtm:
-            filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
-            subprocess.run(
-                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            os.replace(filled_dtm_path, final_dtm_path)
-        else:
-            print(f"No chunks found for {base_name}. Skipping merge.")
-    
-    if os.path.exists(temp_dtm_dir):
-        shutil.rmtree(temp_dtm_dir, ignore_errors=True)
-    
-    if counter is not None:
-        counter.value += 1
-    
-    return final_dtm_path
 
 def process_dtm_chunk_wrapper(args):
     (las_file, large_chunk, small_chunk, output_dir, threshold,
@@ -273,6 +176,7 @@ def process_dtm_chunk_wrapper(args):
     return process_chunk_to_dem(input_file=las_file, large_chunk_bbox=large_chunk, small_chunk_bbox=small_chunk, temp_dir=output_dir, scalar=scalar, threshold=threshold, slope=slope, window=window, rigidness=rigidness, iterations=iterations, resolution=resolution, time_step=time_step, cloth_resolution=cloth_resolution, fill_gaps=fill_gaps, filter_smrf=filter_smrf, filter_csf=filter_csf)
 
 def generate_dtm(input_folder, output_folder, run_name, resolution, chunk_size, fill_gaps, num_workers, method, chunk_overlap, threshold, scalar, slope, window, rigidness, iterations, time_step, cloth_resolution, filter_smrf, filter_csf):
+    
     final_output_folder = os.path.join(output_folder, run_name, 'DTM')
     os.makedirs(final_output_folder, exist_ok=True)
     temp_folder = os.path.join(final_output_folder, "temp")
@@ -286,71 +190,86 @@ def generate_dtm(input_folder, output_folder, run_name, resolution, chunk_size, 
         print("No LAS/LAZ files found. Exiting DTM generation.")
         return
     
-    chunk_tasks = []
-    for las_file in las_files:
-        target_wkt = get_las_footprint_wkt(las_file)
-        avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
-        if not is_resolution_ok:
-            print(f"Warning: DTM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
+
+    for las_file in tqdm(las_files, desc="Processing LAS files", unit="file"):
         
-        base_name = os.path.splitext(os.path.basename(las_file))[0]
-        temp_dtm_dir = os.path.join(temp_folder, base_name)
-        os.makedirs(temp_dtm_dir, exist_ok=True)
-        
-        large_chunks, small_chunks = create_chunks_from_wkt(
-            target_wkt,
-            chunk_size=chunk_size,
-            overlap=chunk_overlap
-        )
-        
-        for large_chunk, small_chunk in zip(large_chunks, small_chunks):
-            chunk_tasks.append((las_file, large_chunk, small_chunk, temp_dtm_dir, scalar, threshold, slope, window, rigidness, iterations, resolution, time_step, cloth_resolution, fill_gaps, filter_smrf, filter_csf))
-    
-    with multiprocessing.Pool(processes=num_workers) as pool:
-        list(tqdm(
-            pool.imap(process_dtm_chunk_wrapper, chunk_tasks),
-            total=len(chunk_tasks),
-            desc="Processing DTM Chunks"
-        ))
-    
-    for las_file in las_files:
         base_name = os.path.splitext(os.path.basename(las_file))[0]
         temp_dtm_dir = os.path.join(temp_folder, base_name)
         final_dtm_path = os.path.join(final_output_folder, f"{base_name}_DTM.tif")
-        
-        chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
-        if not chunk_files:
-            print(f"No DTM chunks found for {base_name}. Skipping.")
-            continue
-        
-        merged_dtm = merge_chunks(chunk_files, final_dtm_path)
-        
-        if fill_gaps and merged_dtm:
-            filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
-            subprocess.run(
-                ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+
+        if not os.path.exists(final_dtm_path):
+
+            target_wkt = get_las_footprint_wkt(las_file)
+            avg_spacing, is_resolution_ok = check_resolution(las_file, resolution, method)
+            if not is_resolution_ok:
+                print(f"Warning: DTM resolution ({resolution}m) is finer than avg spacing ({avg_spacing:.3f}m).")
+            
+            base_name = os.path.splitext(os.path.basename(las_file))[0]
+            temp_dtm_dir = os.path.join(temp_folder, base_name)
+            os.makedirs(temp_dtm_dir, exist_ok=True)
+            
+            large_chunks, small_chunks = create_chunks_from_wkt(
+                target_wkt,
+                chunk_size=chunk_size,
+                overlap=chunk_overlap
             )
-            os.replace(filled_dtm_path, final_dtm_path)
 
-        with rasterio.open(final_dtm_path) as src:
-            dtm_data = src.read(1)
-            dtm_nodata = src.nodata if src.nodata is not None else np.nan
-            dtm_data = np.where(dtm_data == dtm_nodata, np.nan, dtm_data)
-
-        # Plot the merged DSM and save as PNG
-        plt.figure(figsize=(10, 10))
-        plt.imshow(dtm_data, cmap='terrain', vmin=np.nanpercentile(dtm_data, 2), vmax=np.nanpercentile(dtm_data, 98))
-        plt.colorbar(label='Elevation (m)')
-        plt.title(f'DSM: {base_name}')
-        plt.axis('off')
-        plt.savefig(os.path.join(final_output_folder, f"{base_name}_DTM.png"), bbox_inches='tight', pad_inches=0.1)
-        plt.close()  # Ensure we close the plot to free memory
+            chunk_tasks = []
+            
+            for large_chunk, small_chunk in zip(large_chunks, small_chunks):
+                chunk_tasks.append((
+                    las_file, large_chunk, small_chunk, temp_dtm_dir,
+                    threshold,      # correct position
+                    scalar,         # correct position
+                    slope, window, rigidness, iterations,
+                    resolution, time_step, cloth_resolution,
+                    fill_gaps, filter_smrf, filter_csf
+                ))
 
         
-        shutil.rmtree(temp_dtm_dir, ignore_errors=True)
+            with multiprocessing.Pool(processes=num_workers) as pool:
+                    list(tqdm(
+                        pool.imap_unordered(process_dtm_chunk_wrapper, chunk_tasks),
+                        total=len(chunk_tasks),
+                        desc="Processing DTM Chunks"))
+            
+            chunk_files = sorted(glob.glob(os.path.join(temp_dtm_dir, "*.tif")))
+            if not chunk_files:
+                print(f"No DTM chunks found for {base_name}. Skipping.")
+                continue
+            
+            merged_dtm = merge_chunks(chunk_files, final_dtm_path)
+            
+            if fill_gaps and merged_dtm:
+                filled_dtm_path = os.path.join(temp_dtm_dir, f"{base_name}_filled.tif")
+                subprocess.run(
+                    ["gdal_fillnodata.py", "-md", "10", "-si", "2", merged_dtm, filled_dtm_path],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                os.replace(filled_dtm_path, final_dtm_path)
+
+            with rasterio.open(final_dtm_path) as src:
+                dtm_data = src.read(1)
+                dtm_nodata = src.nodata if src.nodata is not None else np.nan
+                dtm_data = np.where(dtm_data == dtm_nodata, np.nan, dtm_data)
+
+            # Plot the merged DSM and save as PNG
+            plt.figure(figsize=(10, 10))
+            plt.imshow(dtm_data, cmap='terrain', vmin=np.nanpercentile(dtm_data, 2), vmax=np.nanpercentile(dtm_data, 98))
+            plt.colorbar(label='Elevation (m)')
+            plt.title(f'DTM: {base_name}')
+            plt.axis('off')
+            plt.savefig(os.path.join(final_output_folder, f"{base_name}_DTM.png"), bbox_inches='tight', pad_inches=0.1)
+            plt.close()  # Ensure we close the plot to free memory
+
+            shutil.rmtree(temp_dtm_dir, ignore_errors=True)
+            
+        else:
+            print(f"Skipping {base_name}: DTM already exists.")
+        
+        
     
     elapsed_time = timedelta(seconds=int(time.time() - start_time))
     print(f"\nDTM generation completed in {elapsed_time}.")

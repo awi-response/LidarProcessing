@@ -47,23 +47,6 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         f"{os.path.basename(input_file).replace('.las', '')}_chunk_{int(small_chunk_bbox.bounds[0])}_{int(small_chunk_bbox.bounds[1])}.tif"
     )
 
-    # Extract bounds and compute grid size
-    minx, miny, maxx, maxy = small_chunk_bbox.bounds
-    width = int((maxx - minx) / resolution)
-    height = int((maxy - miny) / resolution)
-
-    #print("=" * 60)
-    #print(f"[INFO] Processing chunk: {chunk_file}")
-    #print(f"[INFO] Bounds: minx={minx}, miny={miny}, maxx={maxx}, maxy={maxy}")
-    #print(f"[INFO] Resolution: {resolution}")
-    #print(f"[INFO] Calculated grid size: width={width}, height={height}")
-    #print("=" * 60)
-
-    # Optional: sanity check for overly large rasters
-    if width > 50000 or height > 50000:
-        print("[WARNING] Grid size too large — skipping chunk to avoid crash.")
-        return None
-
     pipeline = [
         {"type": "readers.las", "filename": input_file},
         {"type": "filters.crop", "polygon": wkt_dumps(large_chunk_bbox)},
@@ -88,7 +71,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
         #print("[INFO] PDAL execution completed.")
     except RuntimeError as e:
-        print(f"[ERROR] PDAL execution failed: {e}. Empty chunk.")
+        f"[ERROR] PDAL execution failed: {e}. Empty chunk."
         return None
 
     try:
@@ -146,7 +129,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
     try:
         pdal.pipeline.Pipeline(json.dumps(pipeline)).execute()
     except RuntimeError as e:
-        print(f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering.")
+        f"[INFO] PDAL execution failed: {e}. No Points in chunk after filterering."
         return None
 
     resampled_file = chunk_file.replace('.tif', '_resampled.tif')

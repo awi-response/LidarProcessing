@@ -38,9 +38,20 @@ def reproject_las(input_las, output_las):
 
     target_epsg = get_utm_epsg(input_las)
 
+    with laspy.open(input_las) as file:
+        crs = file.header.parse_crs()
+        print(f"CRS found in {input_las}: {crs}")
+
+        if crs is None:
+            crs = 4326
+            print (f"No CRS found in {input_las}. Assuming EPSG:4326 for reprojection.")
+
+        print(f"Reprojecting {input_las} from {crs} to EPSG:{target_epsg}")
+
+
     pipeline = [
         {"type": "readers.las", "filename": input_las},
-        {"type": "filters.reprojection", "out_srs": f"EPSG:{target_epsg}"},
+        {"type": "filters.reprojection", "in_srs": f"{crs}", "out_srs": f"EPSG:{target_epsg}"},
         {"type": "writers.las", "filename": output_las}
     ]
 

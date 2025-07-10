@@ -46,7 +46,7 @@ def process_chunk(
         f"{base}_chunk_{int(chunk_bbox.bounds[0])}_{int(chunk_bbox.bounds[1])}.las"
     )
 
-    # 1) find which vertical-ellipsoid code goes with your horizontal CRS
+    # find which vertical-ellipsoid code goes with your horizontal CRS
     hcrs = CRS.from_epsg(ref_crs)
     datum = hcrs.datum.name.lower()
     if "wgs 84" in datum:
@@ -60,7 +60,7 @@ def process_chunk(
     in_srs  = f"EPSG:{ref_crs}+{vert_ellipsoid}"
     out_srs = f"EPSG:{ref_crs}+3855"   # same horizontal, EGM2008 vertical
 
-    # 2) build your PDAL pipeline
+ 
     pipeline = [
         # read raw LAS (ellipsoidal heights)
         {"type": "readers.las", "filename": input_file},
@@ -75,11 +75,11 @@ def process_chunk(
         {"type": "filters.crop", "polygon": wkt_dumps(chunk_bbox)},
 
         # remove statistical outliers
-        {"type": "filters.outlier",
-         "method": "statistical",
-         "mean_k": sor_knn,
-         "multiplier": sor_multiplier
-        },
+        #{"type": "filters.outlier",
+        # "method": "statistical",
+        # "mean_k": sor_knn,
+        # "multiplier": sor_multiplier
+        #},
 
         # clamp to your Z-range (now orthometric)
         {"type": "filters.range", "limits": f"Z[{min_z}:{max_z}]"},
