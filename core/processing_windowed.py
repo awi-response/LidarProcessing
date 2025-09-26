@@ -158,7 +158,7 @@ def process_chunk_to_dem(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         try:
             subprocess.run([
                 "gdal_fillnodata.py",
-                "-md", "100",
+                "-md", "10",
                 "-si", "2",
                 chunk_file,
                 chunk_file

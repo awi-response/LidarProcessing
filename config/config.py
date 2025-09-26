@@ -15,13 +15,13 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'FireData'  # Custom name for this run
+        self.run_name = 'TVC'  # Custom name for this run
 
         # ---------- PATHS -----------
         # Input data paths
         self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas'  # Path to vector footprints of target areas
-        self.las_files_dir = '/isipd/projects/p_planetdw/data/lidar/02_pointclouds/2024'  # Path to lidar point clouds (*.las/*.laz)
-        self.las_footprints_dir = '/isipd/projects/p_planetdw/data/lidar/03_las_footprints/2024'  # Path to footprints of flight paths, if not available will be generated
+        self.las_files_dir = '/isipd/projects/p_planetdw/data/lidar/02_pointclouds/2023/'  # Path to lidar point clouds (*.las/*.laz)
+        self.las_footprints_dir = '/isipd/projects/p_planetdw/data/lidar/03_las_footprints/'  # Path to footprints of flight paths, if not available will be generated
 
         # Output directories
         self.preprocessed_dir = '/isipd/projects/p_planetdw/data/lidar/04_preprocessed'  # Path for preprocessed lidar data
@@ -33,64 +33,66 @@ class Configuration:
         self.multiple_targets = True  # If target areas are saved in one gdf set to True
         self.target_name_field = 'id'  # Field in target area gdf to use as target name
 
-        self.max_elevation_threshold = 0.99 # quantile to disgard atmospheric noise etc. Data outside the quantile is disgarded. 
+        # elevation outlier cap (quantile in [0–1])
+        self.max_elevation_threshold = 0.99  # Higher removes more high outliers (aircraft/atmosphere). Typical 0.98–0.9995.
 
-        # SOR parameters
-        self.knn = 100  # number of k nearest neighbors, the higher the more stable
-        self.multiplier = 2 # Threshold for outlier removal: points beyond (global_mean + multiplier * stddev) are removed.
+        # SOR parameters (Statistical Outlier Removal)
+        self.knn = 100  # neighbors for stats. 50–200 is common. Higher = stabler but slower.
+        self.multiplier = 1  # (mean + m*std). Lower (0.8–1.2) = aggressive; higher (1.5–2.5) = conservative.
 
         # ------- PROCESSING --------
 
         self.create_DSM = True
-        self.create_DEM = False
-        self.create_CHM = False
+        self.create_DEM = True
+        self.create_CHM = True
 
-        self.fill_gaps = True # use IDW to close gaps in rasters
-        self.resolution = 1 # resoltion of generated rasters in meter, can be 'Auto' or number
+        self.fill_gaps = True  # use IDW to close gaps in rasters
+        self.resolution = 1  # pixel size (m). Smaller = sharper/heavier. Rule of thumb: >= sqrt(1 / points_per_m²).
 
-        self.point_density_method = 'sampling' # method to determine point density, can be 'sampling' (exact) or 'density' (fast)
+        self.point_density_method = 'density'  # method to determine point density, can be 'sampling' (exact) or 'density' (fast)
 
-    # ______ GROUND FILTERING ______
+        # ______ GROUND FILTERING ______
 
-        self.smrf_filter = True # use SMRF filter 
-        self.csf_filter = True # use cloth simulation method
-        self.threshold = 2 # threshold for filters
+        self.smrf_filter = True  # use SMRF filter 
+        self.csf_filter = True  # use cloth simulation method
+        self.threshold = 1  # vertical tolerance (m) for extra clipping. Typical 0.5–2.
 
-        self.smrf_window_size = 20 # window size for SMRF filter, the higher the more vegetation is removed
-        self.smrf_slope = 0.2 # slope for SMRF filter, the higher the more vegetation is removed
-        self.smrf_scalar = 2 # scalar for SMRF filter, the higher the more vegetation is removed
+        # SMRF
+        self.smrf_window_size = 20  # window size (m). Larger (15–30) removes more canopy but may bridge narrow valleys.
+        self.smrf_slope = 0.2  # slope tolerance. Higher (0.2–0.4) accepts steeper ground; too high may keep low veg.
+        self.smrf_scalar = 2  # elevation diff scale. 1–3 typical. Higher = more aggressive ground acceptance.
 
-        self.csf_rigidness = 3 # rigidness of the simulated cloth, the lower the more flexible, use low values for steep and high for flat terrain
-        self.csf_iterations = 500 # number of simulation steps, the higher, the more adapted to the point cloud
-        self.csf_time_step = 0.5 # time step of the simulation, the lower the more accurate, but slower
-        self.csf_cloth_resolution = 1 # resolution of the cloth (m), the lower the more accurate, but slower
+        # CSF (Cloth Simulation)
+        self.csf_rigidness = 2  # cloth stiffness. 1–2 for rugged/steep; 3–4 for very flat urban.
+        self.csf_iterations = 500  # steps. 200–1000. More = better fit, slower.
+        self.csf_time_step = 1  # integration step. 0.5–1.0 common. Smaller = stable/accurate, slower.
+        self.csf_cloth_resolution = 1  # grid spacing (m). 0.5–2 typical. Smaller = finer ground detail, heavier.
 
         # ------ VALIDATION ------
 
         self.data_type = 'raster'   # Type of validation data, can be 'raster' or 'vector' (points)
         self.validation_target = 'DSM' # product to validate, can be 'DSM', 'DEM' or 'CHM', select validation data accordingly! (DSM: higest point, DEM: ground level, CHM: height of vegetation)
         self.val_column_point = 'val_value' # column in point validation data to use for comparison
-        self.val_band_raster = 1
-        self.sample_size = 100 # number of points to sample for validation
-
+        self.val_band_raster = 1  # band index of reference raster (usually 1 unless multiband).
+        self.sample_size = 100  # samples for stats. 100–10,000. Larger = more stable metrics.
 
         # ------ ADVANCED SETTINGS ------
 
         # _______ Preprocessing _______
-        self.overlap = 0.2  # minimum overlap between pointcloud and AOI, 0.5 means 50% overlap
+        self.overlap = 0.1  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
 
         self.filter_date = False  # Filter las files by date
         self.start_date = '2023-07-22'  # Start date for filtering las files
         self.end_date = '2023-07-20'  # End date for filtering las files
 
         # _______ Processing _______
-        self.chunk_size = 500 # chunk in meters
-        self.chunk_overlap = 0.1 # overlap between chunks in percentage, 0.2 means 20% overlap
-        self.num_workers = 16  # Number of parallel workers for processing
+        self.chunk_size = 500  # chunk size (m). 250–1000 typical. Larger = fewer edges, more memory.
+        self.chunk_overlap = 0.1  # chunk overlap (fraction). 0.05–0.3. More reduces seam artifacts.
+        self.num_workers = 32  # parallel workers. <= physical cores/RAM capacity.
 
         # Set overall GDAL settings
         gdal.UseExceptions()  # Enable exceptions instead of silent failures
-        gdal.SetCacheMax(32000000000)  # Set cache size in KB for GDAL operations
+        gdal.SetCacheMax(32000000000)  # GDAL cache bytes (~32 GB). Set to ~20–60% of available RAM for big rasters.
         warnings.filterwarnings('ignore')  # Suppress warnings
 
     def validate(self):

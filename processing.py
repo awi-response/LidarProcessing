@@ -53,9 +53,10 @@ def check_resolution(las_file, resolution, method="sampling", num_samples=10000)
         avg_distance = np.mean(distances[:, 1])  # Ignore self-distance
 
     elif method == "density":
-        bbox_volume = np.prod(points.max(axis=0) - points.min(axis=0))
-        density = len(points) / bbox_volume if bbox_volume > 0 else float('inf')
-        avg_distance = (1 / density) ** (1 / 3)
+        extent_xy = (points[:, :2].max(axis=0) - points[:, :2].min(axis=0))
+        area = float(extent_xy[0] * extent_xy[1])
+        density = len(points) / area if area > 0 else float('inf')  # pts / m²
+        avg_distance = (1.0 / density) ** 0.5  # m
 
     else:
         raise ValueError("Invalid method. Choose 'sampling' or 'density'.")

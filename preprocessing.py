@@ -111,8 +111,8 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                                 end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
                             try:
-                                las_file = laspy.read(las_path)
-                                las_date = las_file.header.creation_date
+                                with laspy.open(las_path) as las_file:
+                                    las_date = las_file.header.creation_date
 
                                 print(f"{las_file} Creation date: {las_date}")
                                 if las_date:
