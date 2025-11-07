@@ -12,4 +12,4 @@ if __name__ == '__main__':
 
     processing.process_all(config)
 
-    #validation.validate_all(config)
+    validation.validate_all(config)

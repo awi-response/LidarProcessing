@@ -1,0 +1,283 @@
+/* ===========================================================
+   MODERN CRT GREEN THEME — monochrome green on black
+   - Retro terminal vibes with subtle depth
+   - No `accent:` property
+   - Layout & spacing unchanged
+   - Borders/frames forced to green so everything matches
+   =========================================================== */
+
+/* ---------- Root / header / footer ---------- */
+Screen {
+  background: #001400;      /* deep green-black */
+  color: #00ff6a;           /* phosphor green text */
+}
+
+Header, Footer {
+  background: #001b00;      /* darker status bar */
+  color: #00ff6a;
+  text-style: bold;
+}
+
+/* ---------- Split layout ---------- */
+#config_row {
+  height: 1fr;
+  content-align: left top;
+}
+
+/* Left pane (config) */
+#config_box {
+  width: 50%;
+  min-width: 60;
+  background: #001b00;      /* pane surface */
+  border: round;
+}
+
+#config_scroll {
+  height: 1fr;
+  padding: 0 1;
+  background: #001b00;
+}
+
+/* Right pane (controls/output/ram/run) */
+#right_box {
+  width: 1fr;
+  padding: 0 1;
+  content-align: left top;
+  background: #001700;      /* subtle difference from left */
+  border: round;
+}
+
+#right_stack {
+  height: 1fr;
+  padding: 0 0 1 0;
+  content-align: left top;
+}
+
+/* ---------- Headings ---------- */
+.header,
+.section-header,
+#output_header,
+#ram_header,
+#products_header {
+  padding: 1 1 0 1;
+  color: #66ffb2;           /* bright heading green */
+  text-style: bold;
+}
+
+/* ---------- Config groups ---------- */
+.config-group {
+  margin: 1 0;
+  background: #002200;      /* slab panel */
+  border: round;
+}
+
+.config-group .group-body {
+  height: auto;
+  max-height: 18;
+  overflow: auto;
+  padding: 0 1;
+}
+
+.row { padding: 0 1; height: auto; }
+
+.var-name {
+  text-style: bold;
+  color: #7affc2;           /* label green */
+  min-width: 12;
+  width: 24;
+}
+
+.var-editor { width: 1fr; }
+
+/* ---------- Inputs ---------- */
+Input, Select {
+  background: #001a00;      /* recessed field */
+  color: #97ffc0;           /* slightly softer green for legibility */
+  border: round;
+  padding: 0 1;
+}
+Input:focus, Select:focus {
+  background: #003000;      /* subtle lift */
+  color: #b9ffd6;
+  text-style: bold;
+}
+
+Checkbox {
+  background: #001a00;
+  color: #97ffc0;
+  border: round;
+  padding: 0 1;
+}
+Checkbox:focus {
+  background: #003000;
+  color: #b9ffd6;
+  text-style: bold;
+}
+
+/* ---------- Button rows (no extra box; buttons define look) ---------- */
+#actions_row,
+#products_row {
+  layout: horizontal;
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  height: auto;
+}
+
+/* ---------- Buttons (green-only; no borders) ---------- */
+Button {
+  background: #002a00;      /* neutral tile */
+  color: #8cffc9;           /* readable bright green */
+  text-style: bold;
+  border: none;
+}
+
+/* Primary = vivid green tile with dark glyphs for contrast */
+Button.-primary {
+  background: #00ff6a;      /* vivid fill */
+  color: #001100;           /* very dark green/black text */
+  border: none;
+}
+
+/* Hover / focus lift */
+Button.-default:hover { background: #003300; }
+Button.-primary:hover { background: #40ff95; }
+Button:focus { border: none; text-style: bold; }
+Button.-primary:focus { background: #40ff95; }
+
+/* Buttons fill the row; vertical breathing room; horizontal gaps */
+#actions_row > Button,
+#products_row > Button {
+  width: 1fr;
+  min-width: 12;
+  height: 3;
+  margin: 0;
+  margin-top: 1;
+  margin-bottom: 1;
+}
+
+/* Gap BETWEEN neighbors; outer edges stay tight */
+#actions_row > Button { margin-right: 1; }
+#actions_row > Button:last-child { margin-right: 0; }
+#products_row > Button { margin-right: 1; }
+#products_row > Button:last-child { margin-right: 0; }
+
+/* Disabled state */
+Button:disabled,
+.action-btn.as-disabled {
+  opacity: 55%;
+  text-style: dim;
+}
+
+/* ---------- Output / Log ---------- */
+#output_box { height: 1fr; min-height: 8; padding: 0; }
+
+#output_log {
+  height: 1fr;
+  margin: 0 1 1 1;
+  background: #001000;      /* deep well */
+  color: #aaffd7;           /* crisp log text */
+  border: round;
+  padding: 0 1;
+}
+
+/* ---------- RAM usage (ProgressBar + Run) ---------- */
+#ram_box {
+  layout: horizontal;
+  height: auto;
+  padding: 0;
+  content-align: left middle;
+  background: #001700;
+}
+
+/* Track + border */
+#ram_bar {
+  height: 3;
+  width: 3fr;
+  margin: 0 1 1 1;
+  background: #002200;      /* track */
+  border: round;
+}
+
+/* Green progress fill and statuses */
+#ram_bar Bar > .bar--bar {
+  color: #00ff6a;           /* fill */
+  background: #003300;      /* faint trail */
+}
+#ram_bar Bar > .bar--indeterminate {
+  color: #66ffb2;           /* pulse */
+  background: #002a00;
+}
+#ram_bar Bar > .bar--complete {
+  color: #caffea;           /* finished */
+}
+
+#ram_bar PercentageStatus {
+  color: #7affc2;           /* stat text */
+  text-style: bold;
+}
+#ram_bar ETAStatus {
+  color: #39ff9b;           /* dim hint */
+  text-style: dim;
+}
+
+/* Run button matches sizing & spacing */
+#btn-run {
+  height: 3;
+  width: 1fr;
+  min-width: 0;
+  margin: 0 1 1 0;
+  border: none;
+}
+
+/* ---------- CPU sparklines ---------- */
+#cpu_row {
+  layout: horizontal;
+  height: 4;
+  padding: 0 1 0 1;
+  content-align: left middle;
+  background: #001b00;
+  border: round;
+}
+
+.cpu-spark {
+  width: 1fr;
+  height: 3;
+  margin-right: 1;
+}
+
+/* Dark baseline → neon peaks */
+.cpu-spark > .sparkline--min-color { color: #004d26; }
+.cpu-spark > .sparkline--max-color { color: #00ff6a; }
+
+/* ---------- Consistency / focus ---------- */
+#config_box, #right_box, #cpu_row, #output_log, .config-group, #ram_bar {
+  border: round;
+}
+
+Input:focus, Select:focus, Checkbox:focus, Button:focus {
+  text-style: bold;
+}
+
+/* ===========================================================
+   STRONG, SINGLE BOUNDARY COLOR OVERRIDE (put last)
+   Ensures every framed widget uses the same green border color.
+   Uses high-specificity selectors to beat any theme defaults.
+   =========================================================== */
+Container#config_box,
+Container#right_box,
+Container#cpu_row,
+Log#output_log,
+Collapsible.config-group,
+ProgressBar#ram_bar,
+Container#ram_box,
+Container#config_box:focus,
+Container#right_box:focus,
+Container#cpu_row:focus,
+Log#output_log:focus,
+Collapsible.config-group:focus,
+ProgressBar#ram_bar:focus,
+Container#ram_box:focus {
+  color: #00ff6a;  /* universal green boundary */
+}
