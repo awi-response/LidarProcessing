@@ -54,8 +54,13 @@ project_root/
 
 For efficiency, point clouds are split into **smaller chunks** and processed in **parallel**.  
 
-## **Setup**  
-The pipeline requires **Python 3.8+** and the following dependencies:  
+## **Setup**
+For an easy setup we recommend pixi:
+```bash
+pixi add pdal laspy shapely geopandas rasterio numpy scipy tqdm textual gdal psutil
+```
+
+Of course, you can also use the old way. The pipeline requires **Python 3.8+** and the following dependencies:  
 ```bash
 pip install pdal laspy shapely geopandas rasterio numpy scipy tqdm
 ```
@@ -81,6 +86,21 @@ This executes all pipeline steps: **Preprocessing → Processing → Validation*
 To run specific steps:  
 - Convert `main.py` into a **Jupyter Notebook**.  
 - Or manually **comment out** the steps you don’t need.  
+
+### **For easy access use the TUI**.
+We have inculded an interactive user Interface which allows you to configure your parameters, set your processing steps and products. To access it, in your terminal run:
+
+```bash 
+pixi run LidarProcessing
+```
+
+or, after activating your environment:
+```bash
+python LidarProcessing.py
+```
+Your output will look like this:
+
+![ui](ui.png)
 
 ## **Coming Soon **  
 **GPU Acceleration** for faster processing.  
