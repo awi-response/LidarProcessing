@@ -2,7 +2,7 @@
 authors = ["carlstadie <116877335+carlstadie@users.noreply.github.com>"]
 channels = ["conda-forge"]
 name = "LidarProcessing"
-platforms = ["win-64"]
+platforms = ["win-64", "linux-64", "osx-64"]
 version = "0.1.0"
 
 [tasks]
