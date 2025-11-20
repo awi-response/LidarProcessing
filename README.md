@@ -9,7 +9,7 @@ The code is structured around three main steps in the pipeline:
 
 1. **Preprocessing** (`preprocessing.py`) – Assigns point clouds to target areas and filters outliers.  
 2. **Processing** (`processing.py`) – Converts preprocessed point clouds into **DSM, DEM, and CHM** outputs.  
-3. **Validation** (`validation.py`) – Evaluates generated models (currently under development).  
+3. **Validation** (`validation.py`) – Evaluates generated models against other rasters or point data.  
 
 These steps are orchestrated by `main.py` and rely on helper methods in the `/core` directory.  
 Configuration settings are stored in `/config/` and are initialized in `main.py`.
