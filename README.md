@@ -9,7 +9,7 @@ The code is structured around three main steps in the pipeline:
 
 1. **Preprocessing** (`preprocessing.py`) – Assigns point clouds to target areas and filters outliers.  
 2. **Processing** (`processing.py`) – Converts preprocessed point clouds into **DSM, DEM, and CHM** outputs.  
-3. **Validation** (`validation.py`) – Evaluates generated models (currently under development).  
+3. **Validation** (`validation.py`) – Evaluates generated models against other rasters or point data.  
 
 These steps are orchestrated by `main.py` and rely on helper methods in the `/core` directory.  
 Configuration settings are stored in `/config/` and are initialized in `main.py`.
@@ -55,9 +55,9 @@ project_root/
 For efficiency, point clouds are split into **smaller chunks** and processed in **parallel**.  
 
 ## **Setup**
-For an easy setup we recommend pixi:
+For an easy setup we recommend pixi. After clonting the repo simply run:
 ```bash
-pixi add pdal laspy shapely geopandas rasterio numpy scipy tqdm textual gdal psutil
+pixi install
 ```
 
 Of course, you can also use the old way. The pipeline requires **Python 3.8+** and the following dependencies:  
@@ -68,7 +68,7 @@ or using Conda:
 ```bash
 conda install -c conda-forge pdal laspy shapely geopandas rasterio numpy scipy tqdm
 ```
-But the easiest way is to use the `example_env.yml`.
+But the easiest way is to use Pixi, trust me!
 
 ## **Usage**  
 ### **1. Configure Settings**  
