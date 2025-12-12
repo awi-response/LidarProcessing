@@ -17,35 +17,22 @@ from shapely.wkt import loads as wkt_loads, dumps as wkt_dumps
 
 from core.reprojection import get_utm_epsg, reproject_las, is_utm_crs
 from core.preprocess_windowed import create_chunks_from_wkt, process_chunk, merge_and_crop_chunks
-from core.extract_footprints import extract_footprint_batch, get_crs_components_from_header
+from core.extract_footprints import extract_footprint_batch
 from core.utils import split_gpkg
 
 
 def get_las_header(las_file):
-    """
-    Return LAS header info + CRS:
-
-    - scale, offset from LAS header
-    - ref_crs_h: EPSG of horizontal CRS (used for XY)
-    - ref_crs_v: EPSG of vertical CRS (if any, else None)
-    """
     with laspy.open(las_file) as las:
         header = las.header
         scale = header.scales
         offset = header.offsets
-
-        full_crs, horiz_crs, vert_crs, horiz_epsg, vert_epsg = get_crs_components_from_header(header)
-
-        # Ensure we always have some EPSG for horizontal (keep previous default)
-        if horiz_epsg is None:
-            horiz_epsg = 4979
-
-    return scale, offset, horiz_epsg, vert_epsg
+        crs = header.parse_crs()
+        crs_epsg = crs.to_epsg() if crs else 4979
+    return scale, offset, crs_epsg
 
 
 def process_chunk_wrapper(args):
     return process_chunk(*args)
-
 
 def plot_target_and_footprints(target_gdf, matched_las_paths, las_footprint_dir, output_path):
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -111,10 +98,19 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                 target_area = target_gdf.geometry.area.sum()
 
                 if intersection_area / target_area > threshold:
-                    las_name = os.path.splitext(os.path.basename(las_fp))[0] + ".las"
-                    las_path = os.path.join(las_file_dir, las_name)
-
+                    las_name = os.path.splitext(os.path.basename(las_fp))[0]
+                    # Check for both .las and .laz files
+                    las_path = os.path.join(las_file_dir, las_name + ".las")
+                    laz_path = os.path.join(las_file_dir, las_name + ".laz")
+                    
                     if os.path.exists(las_path):
+                        las_path = las_path
+                    elif os.path.exists(laz_path):
+                        las_path = laz_path
+                    else:
+                        las_path = None
+
+                    if las_path:
                         if filter_date and (start_date or end_date):
 
                             if isinstance(start_date, str):
@@ -124,8 +120,8 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                                 end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
                             try:
-                                las_file = laspy.read(las_path)
-                                las_date = las_file.header.creation_date
+                                with laspy.open(las_path) as las_file:
+                                    las_date = las_file.header.creation_date
 
                                 print(f"{las_file} Creation date: {las_date}")
                                 if las_date:
@@ -148,7 +144,9 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
             output_plot_path = os.path.join(out_dir, f"{target_name}_footprints.png")
             plot_target_and_footprints(target_gdf, las_paths, las_footprint_dir, output_plot_path)
 
+
         print(f"Target area: {target_name}, LAS files found: {len(las_paths)}")
+
 
     print(f"Footprint matching completed in {timedelta(seconds=int(time.time() - start))}. Found {len(target_dict)} target areas.")
     return target_dict
@@ -188,31 +186,34 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
 
         for input_file in las_files:
             if not is_utm_crs(input_file):
-                utm_output_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '_utm.las')}")
+                # Handle both .las and .laz extensions
+                base_name = os.path.basename(input_file)
+                base_name = base_name.replace('.las', '_utm.las').replace('.laz', '_utm.las')
+                utm_output_file = os.path.join(temp_dir, base_name)
                 input_file = reproject_las(input_file, utm_output_file)
 
-            ref_scale, ref_offset, ref_crs_h, ref_crs_v = get_las_header(input_file)
+            ref_scale, ref_offset, ref_crs = get_las_header(input_file)
 
-            if gdf.crs.to_epsg() != ref_crs_h:
-                gdf = gdf.to_crs(epsg=ref_crs_h)
+            if gdf.crs.to_epsg() != ref_crs:
+                gdf = gdf.to_crs(epsg=ref_crs)
 
             target_geom_wkt = wkt_dumps(shape(gdf.geometry.iloc[0]))
             chunks = create_chunks_from_wkt(target_geom_wkt, chunk_size)
 
             if max_elev:
+
                 all_z = laspy.read(input_file).z
                 max_z = np.quantile(all_z, max_elev)
                 min_z = np.quantile(all_z, 1 - max_elev)
+
             else:
                 all_z = laspy.read(input_file).z
                 max_z = np.max(all_z)
                 min_z = np.min(all_z)
 
+
             for chunk in chunks:
-                process_args.append(
-                    (input_file, chunk, temp_dir, max_z, min_z,
-                     sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs_h)
-                )
+                process_args.append((input_file, chunk, temp_dir, max_z, min_z, sor_knn, sor_multiplier, ref_scale, ref_offset, ref_crs))
 
         with tqdm(total=len(process_args), desc=f"Processing {target_fp}", unit="chunk") as pbar:
             with Pool(processes=num_workers) as pool:
@@ -259,6 +260,7 @@ def preprocess_all(conf):
                 split_gpkg(os.path.join(config.target_area_dir, gdf_name), config.target_area_dir, field_name=config.target_name_field)
             break
 
+    
     out_dir = os.path.join(config.preprocessed_dir, config.run_name)
 
     print("\n--- Matching footprints to LAS files ---")
