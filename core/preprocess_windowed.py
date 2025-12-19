@@ -82,7 +82,7 @@ def process_chunk(
         },
 
         # clamp to your Z-range (now orthometric)
-        {"type": "filters.range", "limits": f"Z[{min_z}:{max_z}]"},
+        #{"type": "filters.range", "limits": f"Z[{min_z}:{max_z}]"},
 
         # drop noise class 7
         {"type": "filters.range", "limits": "Classification![7:7]"},

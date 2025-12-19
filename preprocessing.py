@@ -98,10 +98,19 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                 target_area = target_gdf.geometry.area.sum()
 
                 if intersection_area / target_area > threshold:
-                    las_name = os.path.splitext(os.path.basename(las_fp))[0] + ".las"
-                    las_path = os.path.join(las_file_dir, las_name)
-
+                    las_name = os.path.splitext(os.path.basename(las_fp))[0]
+                    # Check for both .las and .laz files
+                    las_path = os.path.join(las_file_dir, las_name + ".las")
+                    laz_path = os.path.join(las_file_dir, las_name + ".laz")
+                    
                     if os.path.exists(las_path):
+                        las_path = las_path
+                    elif os.path.exists(laz_path):
+                        las_path = laz_path
+                    else:
+                        las_path = None
+
+                    if las_path:
                         if filter_date and (start_date or end_date):
 
                             if isinstance(start_date, str):
@@ -177,7 +186,10 @@ def merge_and_clean_las(las_dict, preprocessed_dir, run_name, target_footprint_d
 
         for input_file in las_files:
             if not is_utm_crs(input_file):
-                utm_output_file = os.path.join(temp_dir, f"{os.path.basename(input_file).replace('.las', '_utm.las')}")
+                # Handle both .las and .laz extensions
+                base_name = os.path.basename(input_file)
+                base_name = base_name.replace('.las', '_utm.las').replace('.laz', '_utm.las')
+                utm_output_file = os.path.join(temp_dir, base_name)
                 input_file = reproject_las(input_file, utm_output_file)
 
             ref_scale, ref_offset, ref_crs = get_las_header(input_file)

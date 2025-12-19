@@ -52,7 +52,7 @@ def _safe_parse_crs(header):
     """
     try:
         crs = header.parse_crs()
-        if crs and not crs.is_empty:
+        if crs:
             return crs
     except CRSError:
         pass
@@ -102,7 +102,7 @@ def extract_footprint_batch(input_folder, output_folder):
                 # --- robust CRS parse (replaces direct header.parse_crs()) ---
                 try:
                     las_crs = file.header.parse_crs()
-                    if not las_crs or las_crs.is_empty:
+                    if not las_crs:
                         las_crs = _safe_parse_crs(file.header)
                 except CRSError:
                     las_crs = _safe_parse_crs(file.header)

@@ -53,7 +53,7 @@ def process_chunk_to_dsm(input_file, large_chunk_bbox, small_chunk_bbox, temp_di
         {"type": "filters.ferry", "dimensions": "Z=>Elevation"},
         {
             "type": "filters.range",
-            "limits": "Classification[0:0]"  # Use all points for initial DSM
+            "limits": "Classification![7:7]"  # Use all points for initial DSM, except noise
         },
         {"type": "filters.crop", "polygon": wkt_dumps(small_chunk_bbox)},
         {
