@@ -20,6 +20,10 @@ from core.preprocess_windowed import create_chunks_from_wkt, process_chunk, merg
 from core.extract_footprints import extract_footprint_batch
 from core.utils import split_gpkg
 
+from config.config import Configuration
+
+conf = Configuration()
+
 
 def get_las_header(las_file):
     with laspy.open(las_file) as las:
@@ -86,6 +90,28 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
         target_name = os.path.splitext(os.path.basename(target_fp))[0]
         las_paths = []
 
+        # --- Auto-date parsing per target (local, doesn't leak between iterations) ---
+        effective_start_date = start_date
+        effective_end_date = end_date
+
+        if filter_date and conf.automatic_date_parser:
+            try:
+                # Filename format: WC_Aklavik_20230715_15cm_01.gpkg
+                # Date is the third underscore-separated segment (index 2)
+                date_str = target_name.split("_")[2]   # e.g. "20230715"
+                parsed_date = datetime.strptime(date_str, "%Y%m%d").date()
+                effective_start_date = parsed_date
+                effective_end_date = parsed_date
+                print(f"\n --> AUTO-DATE: Filtering {target_name} for acquisition on {parsed_date}")
+            except (IndexError, ValueError) as e:
+                print(f"\n --> AUTO-DATE: Could not parse date from '{target_name}': {e}. Falling back to manual dates.")
+
+        # Convert manual dates from string if needed
+        if isinstance(effective_start_date, str):
+            effective_start_date = datetime.strptime(effective_start_date, "%Y-%m-%d").date()
+        if isinstance(effective_end_date, str):
+            effective_end_date = datetime.strptime(effective_end_date, "%Y-%m-%d").date()
+
         for las_fp in tqdm(las_footprints, desc="Checking LAS footprints", unit="footprints"):
             las_gdf = gpd.read_file(las_fp)
             if target_gdf.crs != las_gdf.crs:
@@ -102,7 +128,7 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                     # Check for both .las and .laz files
                     las_path = os.path.join(las_file_dir, las_name + ".las")
                     laz_path = os.path.join(las_file_dir, las_name + ".laz")
-                    
+
                     if os.path.exists(las_path):
                         las_path = las_path
                     elif os.path.exists(laz_path):
@@ -111,23 +137,16 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
                         las_path = None
 
                     if las_path:
-                        if filter_date and (start_date or end_date):
-
-                            if isinstance(start_date, str):
-                                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-
-                            if isinstance(end_date, str):
-                                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-
+                        if filter_date and (effective_start_date or effective_end_date):
                             try:
-                                with laspy.open(las_path) as las_file:
-                                    las_date = las_file.header.creation_date
+                                las_file = laspy.read(las_path)
+                                las_date = las_file.header.creation_date
 
-                                print(f"{las_file} Creation date: {las_date}")
+                                print(f"{las_path} Creation date: {las_date}")
                                 if las_date:
-                                    if start_date and las_date < start_date:
+                                    if effective_start_date and las_date < effective_start_date:
                                         continue
-                                    if end_date and las_date > end_date:
+                                    if effective_end_date and las_date > effective_end_date:
                                         continue
                                 else:
                                     continue  # Skip if no creation date
@@ -144,9 +163,7 @@ def match_footprints(target_footprint_dir, las_footprint_dir, las_file_dir, out_
             output_plot_path = os.path.join(out_dir, f"{target_name}_footprints.png")
             plot_target_and_footprints(target_gdf, las_paths, las_footprint_dir, output_plot_path)
 
-
         print(f"Target area: {target_name}, LAS files found: {len(las_paths)}")
-
 
     print(f"Footprint matching completed in {timedelta(seconds=int(time.time() - start))}. Found {len(target_dict)} target areas.")
     return target_dict
@@ -254,7 +271,7 @@ def preprocess_all(conf):
     for gdf in gdfs:
         gdf_path = os.path.join(config.target_area_dir, gdf)
         gdf_loaded = gpd.read_file(gdf_path)
-        if len(gdf_loaded) > 1:
+        if config.multiple_targets:
             print("\n--- Target areas are multi-geometry. Splitting into separate files ---")
             for gdf_name in os.listdir(config.target_area_dir):
                 split_gpkg(os.path.join(config.target_area_dir, gdf_name), config.target_area_dir, field_name=config.target_name_field)

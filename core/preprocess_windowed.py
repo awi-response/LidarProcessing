@@ -78,7 +78,7 @@ def process_chunk(
         {"type": "filters.outlier",
          "method": "statistical",
          "mean_k": sor_knn,
-         "multiplier": sor_multiplier
+         #"multiplier": sor_multiplier
         },
 
         # clamp to your Z-range (now orthometric)
