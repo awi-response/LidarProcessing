@@ -6,7 +6,8 @@ platforms = ["win-64", "linux-64", "osx-64"]
 version = "0.1.0"
 
 [tasks]
-LidarProcessing = 'python ./tui.py'
+LidarProcessing = 'python ./LidarProcessing.py'
+Process = 'python ./main.py'
 
 [dependencies]
 pdal = ">=2.8.4,<3"
