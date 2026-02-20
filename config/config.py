@@ -15,14 +15,14 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Perma-X-2025-ThinIce'  # Custom name for this run
+        self.run_name = 'Perma-X-2025-Ingmar'  # Custom name for this run
         self.year = 2025
 
         # ---------- PATHS -----------
         # Input data paths
-        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas/Sofia'  # Path to vector footprints of target areas
-        self.las_files_dir = f'/isipd/projects/p_planetdw/data/lidar/02_pointclouds/{self.year}/'  # Path to lidar point clouds (*.las/*.laz)
-        self.las_footprints_dir = f'/isipd/projects/p_planetdw/data/lidar/03_las_footprints/{self.year}'  # Path to footprints of flight paths, if not available will be generated
+        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas/Ingmar'  # Path to vector footprints of target areas
+        self.las_files_dir = '/isipd/projects-noreplica/p_macsprocessing/PermaX_MACS/PermaX_2025/data_products/WC_PeelSlumps_20250801_15cm_03/PointClouds'  # Path to lidar point clouds (*.las/*.laz)
+        self.las_footprints_dir = f'/isipd/projects/p_planetdw/data/lidar/03_las_footprints/Ingmar'  # Path to footprints of flight paths, if not available will be generated
 
         # Output directories
         self.preprocessed_dir = '/isipd/projects/p_planetdw/data/lidar/04_preprocessed'  # Path for preprocessed lidar data
@@ -43,9 +43,9 @@ class Configuration:
 
         # ------- PROCESSING --------
 
-        self.create_DSM = True
+        self.create_DSM = False
         self.create_DEM = True
-        self.create_CHM = True
+        self.create_CHM = False
 
         self.fill_gaps = True  # use IDW to close gaps in rasters
         self.resolution = 1  # pixel size (m). Smaller = sharper/heavier. Rule of thumb: >= sqrt(1 / points_per_m²).
@@ -80,7 +80,7 @@ class Configuration:
         # ------ ADVANCED SETTINGS ------
 
         # _______ Preprocessing _______
-        self.overlap = 0.3  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
+        self.overlap = 0.0  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
 
         self.filter_date = False  # Filter las files by date
 
@@ -91,9 +91,9 @@ class Configuration:
         self.end_date = '2023-07-10'  # End date for filtering las files
 
         # _______ Processing _______
-        self.chunk_size = 500  # chunk size (m). 250–1000 typical. Larger = fewer edges, more memory.
+        self.chunk_size = 1000  # chunk size (m). 250–1000 typical. Larger = fewer edges, more memory.
         self.chunk_overlap = 0.1  # chunk overlap (fraction). 0.05–0.3. More reduces seam artifacts.
-        self.num_workers = 32  # parallel workers. <= physical cores/RAM capacity.
+        self.num_workers = 8  # parallel workers. <= physical cores/RAM capacity.
 
         # Set overall GDAL settings
         gdal.UseExceptions()  # Enable exceptions instead of silent failures

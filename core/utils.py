@@ -4,15 +4,15 @@ import geopandas as gpd
 import pandas as pd
 
 import matplotlib.pyplot as plt
-import geopandas as gpd
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
 import pandas as pd
-from weasyprint import HTML
 from typing import Optional, Dict, Tuple
 from io import BytesIO
 import base64
+
+from core.validation_report import generate_validation_report
 
 
 def cleanup_temp_dir(temp_dir):
@@ -94,7 +94,6 @@ def compute_error_metrics(
     """
     df = gdf[[reference_col, prediction_col, 'raster_name']].dropna()
     
-    
     if df.empty:
         print("No valid validation data found.")
         return {"global": {}, "per_raster": {}}, None
@@ -139,22 +138,18 @@ def compute_error_metrics(
             ax = axes[idx // cols][idx % cols]
             subset = df[df['raster_name'] == raster_name]
             
-            # Create scatter plot
             ax.scatter(subset[reference_col], subset[prediction_col], alpha=0.6, edgecolor='k', linewidth=0.3)
             
-            # Add 1:1 line
             min_val = min(subset[reference_col].min(), subset[prediction_col].min())
             max_val = max(subset[reference_col].max(), subset[prediction_col].max())
             ax.plot([min_val, max_val], [min_val, max_val], 'r--', label='1:1 Line')
             
-            # Customize plot
             ax.set_title(raster_name, fontsize=10)
             ax.set_xlabel('Reference Data')
             ax.set_ylabel('Modelled Data')
             ax.grid(True, linestyle='--', alpha=0.5)
             ax.axis('equal')
         
-        # Remove empty subplots
         for i in range(len(unique_rasters), rows * cols):
             fig.delaxes(axes[i // cols][i % cols])
         
@@ -168,94 +163,3 @@ def compute_error_metrics(
         "global": global_stats,
         "per_raster": per_raster_stats
     }, fig
-
-def generate_validation_report(gdf, reference_col, prediction_col, output_path):
-    """
-    Generate a validation report using WeasyPrint.
-    
-    Args:
-        gdf: GeoDataFrame containing validation data
-        reference_col: Name of column with reference values
-        prediction_col: Name of column with predicted values
-        output_path: Path where the PDF report will be saved
-    """
-    # Compute metrics
-    metrics, _ = compute_error_metrics(gdf, reference_col, prediction_col, plot=False)
-    
-    # Create HTML content
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Validation Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 2cm; }}
-            h1 {{ color: #333; }}
-            h2 {{ color: #666; }}
-            table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-            .plot {{ text-align: center; margin: 1em 0; }}
-            .plot img {{ max-width: 100%; height: auto; }}
-        </style>
-    </head>
-    <body>
-        <h1>Validation Report</h1>
-        <h2>Summary Statistics</h2>
-    """
-    
-    # Add global metrics table
-    global_df = pd.DataFrame.from_dict(metrics['global'], orient='index', columns=['Value'])
-    html_content += global_df.to_html(classes='metric-table')
-    
-    # Add global plot
-    fig, ax = plt.subplots(figsize=(10, 6))
-    global_data = gdf[[reference_col, prediction_col]].dropna()
-    ax.scatter(global_data[reference_col], global_data[prediction_col], alpha=0.6)
-    ax.plot([global_data[reference_col].min(), global_data[reference_col].max()],
-            [global_data[reference_col].min(), global_data[reference_col].max()], 'r--')
-    ax.set_title('Global Validation Results')
-    ax.set_xlabel('Reference Data')
-    ax.set_ylabel('Modelled Data')
-    
-    # Save plot to bytes buffer
-    plot_buffer = BytesIO()
-    fig.savefig(plot_buffer, format='png', bbox_inches='tight', dpi=300)
-    plot_buffer.seek(0)
-    encoded_image = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
-    html_content += f'<div class="plot"><img src="data:image/png;base64,{encoded_image}"></div>'
-    
-    # Add per-raster sections
-    for raster_name in gdf['raster_name'].unique():
-        html_content += f'<h2>{raster_name}</h2>'
-        
-        # Add raster-specific metrics
-        raster_df = pd.DataFrame.from_dict(metrics['per_raster'][raster_name], 
-                                         orient='index', columns=['Value'])
-        html_content += raster_df.to_html(classes='metric-table')
-        
-        # Add scatter plot
-        raster_data = gdf[gdf['raster_name'] == raster_name]
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.scatter(raster_data[reference_col], raster_data[prediction_col], alpha=0.6)
-        ax.plot([raster_data[reference_col].min(), raster_data[reference_col].max()],
-                [raster_data[reference_col].min(), raster_data[reference_col].max()], 'r--')
-        ax.set_title(f'{raster_name} Validation Results')
-        ax.set_xlabel('Reference Data')
-        ax.set_ylabel('Modelled Data')
-        
-        # Save plot to bytes buffer
-        plot_buffer = BytesIO()
-        fig.savefig(plot_buffer, format='png', bbox_inches='tight', dpi=300)
-        plot_buffer.seek(0)
-        encoded_image = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
-        html_content += f'<div class="plot"><img src="data:image/png;base64,{encoded_image}"></div>'
-    
-    html_content += """
-    </body>
-    </html>
-    """
-    
-    # Generate PDF
-    HTML(string=html_content).write_pdf(output_path)

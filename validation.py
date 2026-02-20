@@ -12,7 +12,8 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from core.utils import compute_error_metrics, generate_validation_report
+from core.utils import compute_error_metrics
+from core.validation_report import generate_validation_report
 
 
 def raster_to_points(val_dir: str, val_band: int, num_points: int, target_dir: str) -> gpd.GeoDataFrame:
@@ -69,7 +70,6 @@ def raster_to_points(val_dir: str, val_band: int, num_points: int, target_dir: s
                 print(f"Error sampling raster {raster_file}: {e}")
                 continue
 
-    #print(f"\nFinal number of validation points: {len(final_gdf)}")
     return final_gdf
 
 
@@ -118,32 +118,37 @@ def get_dem_value(preprocessed_dir: str, validation_target, val_gdf: gpd.GeoData
             print(f"Error processing {raster_file}: {str(e)}")
             continue
 
-    #print(f"\nTotal combined DEM-sampled points: {len(combined_gdf)}")
-
     return combined_gdf
 
 
 def validate_model(gdf: gpd.GeoDataFrame, reference_col: str, prediction_col: str,
-                  report_path: Optional[str] = None) -> dict:
+                   report_path: Optional[str] = None, config=None) -> dict:
     """
-    Main function to compute metrics and optionally generate report.
-    
+    Compute metrics and generate an HTML validation report.
+
     Args:
-        gdf: GeoDataFrame containing validation data
-        reference_col: Name of column with reference values
+        gdf:            GeoDataFrame containing validation data
+        reference_col:  Name of column with reference values
         prediction_col: Name of column with predicted values
-        report_path: Optional path to save the report
-        
+        report_path:    Optional path to save the report (extension forced to .html)
+        config:         Optional Configuration object — adds run metadata to the report
+
     Returns:
         Dictionary containing validation metrics
     """
-    # Compute metrics
+    # Compute metrics (kept for programmatic access / backward compat)
     metrics, _ = compute_error_metrics(gdf, reference_col, prediction_col, plot=False)
-    
-    # Generate report if requested
+
+    # Generate HTML report if a path was requested
     if report_path:
-        generate_validation_report(gdf, reference_col, prediction_col, report_path)
-    
+        generate_validation_report(
+            gdf,
+            reference_col=reference_col,
+            prediction_col=prediction_col,
+            output_path=report_path,
+            config=config,
+        )
+
     return metrics
 
 
@@ -180,24 +185,27 @@ def validate_all(conf):
     print("\n--- Sampling DEM Values ---")
     combined = get_dem_value(config.results_dir, config.validation_target, output, config.run_name)
 
-    combined = combined.groupby('raster_name', group_keys=False).sample(n=config.sample_size, random_state=42, replace=True)
-
+    combined = combined.groupby('raster_name', group_keys=False).sample(
+        n=config.sample_size, random_state=42, replace=False
+    )
 
     val_run_dir = os.path.join(config.validation_dir, config.run_name)
     os.makedirs(val_run_dir, exist_ok=True)
+
     output_path = os.path.join(val_run_dir, f'{int(time_start)}_validation_points_{config.run_name}.gpkg')
     combined.to_file(output_path)
-
     print(f"Saved validation points to: {output_path}")
 
     print("\n--- Computing Error Metrics ---")
-    report_path = os.path.join(val_run_dir, f'{int(time_start)}_validation_report_{config.run_name}.pdf')
+    report_path = os.path.join(val_run_dir, f'{int(time_start)}_validation_report_{config.run_name}.html')
     validate_model(
         combined,
         reference_col=config.val_column_point,
         prediction_col='dem_value',
-        report_path=report_path
+        report_path=report_path,
+        config=config,                  # passes run_name + validation_target to report
     )
+
     print(f"Validation report saved to: {report_path}")
     print("Validation complete.")
     print("Total validation time:", str(timedelta(seconds=int(time.time() - time_start))))
