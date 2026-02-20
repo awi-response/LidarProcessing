@@ -15,12 +15,12 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Perma-X-2023-VQ680-dateparser'  # Custom name for this run
-        self.year = 2023
+        self.run_name = 'Perma-X-2025-ThinIce'  # Custom name for this run
+        self.year = 2025
 
         # ---------- PATHS -----------
         # Input data paths
-        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas'  # Path to vector footprints of target areas
+        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas/Sofia'  # Path to vector footprints of target areas
         self.las_files_dir = f'/isipd/projects/p_planetdw/data/lidar/02_pointclouds/{self.year}/'  # Path to lidar point clouds (*.las/*.laz)
         self.las_footprints_dir = f'/isipd/projects/p_planetdw/data/lidar/03_las_footprints/{self.year}'  # Path to footprints of flight paths, if not available will be generated
 
@@ -48,7 +48,7 @@ class Configuration:
         self.create_CHM = True
 
         self.fill_gaps = True  # use IDW to close gaps in rasters
-        self.resolution = 5  # pixel size (m). Smaller = sharper/heavier. Rule of thumb: >= sqrt(1 / points_per_m²).
+        self.resolution = 1  # pixel size (m). Smaller = sharper/heavier. Rule of thumb: >= sqrt(1 / points_per_m²).
 
         self.point_density_method = 'density'  # method to determine point density, can be 'sampling' (exact) or 'density' (fast)
 
@@ -56,7 +56,7 @@ class Configuration:
 
         self.smrf_filter = True  # use SMRF filter 
         self.csf_filter = True  # use cloth simulation method
-        self.threshold = 1  # vertical tolerance (m) for extra clipping. Typical 0.5–2.
+        self.threshold = 0.5  # vertical tolerance (m) for extra clipping. Typical 0.5–2.
 
         # SMRF
         self.smrf_window_size = 20  # window size (m). Larger (15–30) removes more canopy but may bridge narrow valleys.
@@ -82,7 +82,7 @@ class Configuration:
         # _______ Preprocessing _______
         self.overlap = 0.3  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
 
-        self.filter_date = True  # Filter las files by date
+        self.filter_date = False  # Filter las files by date
 
         self.automatic_date_parser = True # get dates from target area only for Region_Site_Date_Res_Order filenames
 
