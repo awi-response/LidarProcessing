@@ -15,12 +15,12 @@ class Configuration:
     def __init__(self):
 
         # --------- RUN NAME ---------
-        self.run_name = 'Perma-X-2023-Till'  # Custom name for this run
-        self.year = 2023
+        self.run_name = 'Lidar-for-DW'  # Custom name for this run
+        self.year = 2025
 
         # ---------- PATHS -----------
         # Input data paths
-        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas/Till'  # Path to vector footprints of target areas
+        self.target_area_dir = '/isipd/projects/p_planetdw/data/lidar/01_target_areas/Carl'  # Path to vector footprints of target areas
         self.las_files_dir = f'/isipd/projects/p_planetdw/data/lidar/02_pointclouds/{self.year}'  # Path to lidar point clouds (*.las/*.laz)
         self.las_footprints_dir = f'/isipd/projects/p_planetdw/data/lidar/03_las_footprints/{self.year}'  # Path to footprints of flight paths, if not available will be generated
 
@@ -32,7 +32,7 @@ class Configuration:
         # ------ PREPROCESSING ------
 
         self.multiple_targets = False  # If target areas are saved in one gdf set to True
-        self.target_name_field = 'fid'  # Field in target area gdf to use as target name
+        self.target_name_field = 'id'  # Field in target area gdf to use as target name
 
         # elevation outlier cap (quantile in [0–1])
         self.max_elevation_threshold = 0.99  # Higher removes more high outliers (aircraft/atmosphere). Typical 0.98–0.9995.
@@ -43,7 +43,7 @@ class Configuration:
         self.sor_passes = 3  # number of SOR passes per chunk. Each pass further removes outliers. Typical 2–5.
 
         # ELM filter (Extended Local Minimum – removes isolated low-noise points below the ground surface)
-        self.elm_filter = True  # enable ELM filter
+        self.elm_filter = False  # enable ELM filter
         self.elm_cell = 10.0   # cell size (m) for local minimum estimation. Smaller = finer noise detection.
         self.elm_threshold = 1.0  # points this far (m) below the cell minimum are classified as noise.
 
@@ -91,7 +91,7 @@ class Configuration:
         # ------ ADVANCED SETTINGS ------
 
         # _______ Preprocessing _______
-        self.overlap = 0.0  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
+        self.overlap = 0.1  # min overlap (fraction) between pointcloud and AOI. Typical 0.05–0.3.
 
         self.filter_date = False  # Filter las files by date
 

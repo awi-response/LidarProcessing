@@ -116,7 +116,8 @@ Checkbox:focus {
 
 /* ---------- Button rows (no extra box; buttons define look) ---------- */
 #actions_row,
-#products_row {
+#products_row,
+#config_file_actions {
   layout: horizontal;
   border: none;
   background: transparent;
@@ -148,7 +149,8 @@ Button.-primary:focus { background: #40ff95; }
 
 /* Buttons fill the row; vertical breathing room; horizontal gaps */
 #actions_row > Button,
-#products_row > Button {
+#products_row > Button,
+#config_file_actions > Button {
   width: 1fr;
   min-width: 12;
   height: 3;
@@ -162,6 +164,24 @@ Button.-primary:focus { background: #40ff95; }
 #actions_row > Button:last-child { margin-right: 0; }
 #products_row > Button { margin-right: 1; }
 #products_row > Button:last-child { margin-right: 0; }
+#config_file_actions > Button { margin-right: 1; }
+#config_file_actions > Button:last-child { margin-right: 0; }
+
+ConfirmOverwrite {
+  align: center middle;
+  background: #000000 70%;
+}
+
+#confirm-overwrite {
+  width: 60;
+  height: auto;
+  padding: 1 2;
+  border: round #00ff6a;
+  background: #001b00;
+}
+
+#confirm-overwrite Horizontal { height: auto; }
+#confirm-overwrite Button { margin: 1 1 0 0; }
 
 /* Disabled state */
 Button:disabled,

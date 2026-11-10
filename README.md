@@ -102,6 +102,19 @@ Your output will look like this:
 
 ![ui](ui.png)
 
+The TUI starts with the values from `config/config.py`. Its configuration groups
+cover the settings in that file; DSM, DEM and CHM are controlled by the product
+buttons. Enter a `.json` path under **Configuration file**, then use **Save** or
+**Load** to store or restore the settings, product selections and processing
+stages. Relative paths are resolved from the directory where the TUI was
+started. Saving over an existing file requires confirmation. Loading does not
+execute or import Python config files; settings absent from a snapshot retain
+their current values, while unknown or invalid settings cause an error.
+
+Edits and loaded settings do not rewrite `config/config.py`. Changing `year`
+does not automatically update paths that were constructed from the initial year;
+edit those paths separately.
+
 ## **Coming Soon **  
 **GPU Acceleration** for faster processing.  
 **HPC (High-Performance Computing) Support** for large-scale datasets.  

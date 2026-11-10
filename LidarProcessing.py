@@ -2,8 +2,12 @@ from __future__ import annotations
 from typing import List, Any, Callable
 from collections import deque
 import io
+import json
+import math
 import sys
 import os
+from pathlib import Path
+import tempfile
 import threading
 import traceback
 
@@ -15,6 +19,23 @@ from textual.widgets import (
     Input, Select, Checkbox, Button, Log, ProgressBar, Sparkline
 )
 from textual.containers import VerticalScroll, Horizontal, Container, Vertical
+from textual.screen import ModalScreen
+
+
+class ConfirmOverwrite(ModalScreen[bool]):
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-overwrite"):
+            yield Static(f"Overwrite existing configuration?\n{self.path}")
+            with Horizontal():
+                yield Button("Overwrite", id="confirm-save", variant="primary")
+                yield Button("Cancel", id="cancel-save")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "confirm-save")
 
 
 class _IOToLog(io.TextIOBase):
@@ -59,6 +80,8 @@ class LidarProcessing(App):
     def __init__(self) -> None:
         super().__init__()
         self.cfg = configuration.Configuration()
+        self._config_types = {name: type(value) for name, value in vars(self.cfg).items()}
+        self._invalid_inputs: set[str] = set()
         # help texts extracted from inline comments in Configuration.__init__()
         self._help_map: dict[str, str] = {}
         if hasattr(configuration, "get_help_map"):
@@ -71,6 +94,11 @@ class LidarProcessing(App):
         self.cfg.run_preprocessing = True
         self.cfg.run_processing = True
         self.cfg.run_validation = True
+        self._config_types.update({
+            "run_preprocessing": bool,
+            "run_processing": bool,
+            "run_validation": bool,
+        })
 
         # stdout/stderr redirection
         self._orig_stdout = None
@@ -118,6 +146,13 @@ class LidarProcessing(App):
                         self._make_product_button("btn-prod-dem", "DEM/DTM", self.cfg.create_DEM, enabled=self.cfg.run_processing),
                         self._make_product_button("btn-prod-chm", "CHM", self.cfg.create_CHM, enabled=self.cfg.run_processing),
                         id="products_row", classes="btn-row",
+                    ),
+                    Static("Configuration file (JSON)", classes="section-header"),
+                    Input(value=os.path.join("config", "tui_config.json"), id="config-file"),
+                    Container(
+                        Button("Load", id="btn-load"),
+                        Button("Save", id="btn-save"),
+                        id="config_file_actions",
                     ),
                     Static("Output", id="output_header"),
                     Container(
@@ -181,14 +216,16 @@ class LidarProcessing(App):
     # ---------- Builders ----------
     def _build_collapsible_groups(self) -> List[Collapsible]:
         groups: dict[str, list[str]] = {
-            "General Settings": ["run_name"],
+            "General Settings": ["run_name", "year"],
             "Paths": [
                 "target_area_dir", "las_files_dir", "las_footprints_dir",
                 "preprocessed_dir", "results_dir", "validation_dir",
             ],
             "Preprocessing": [
                 "multiple_targets", "target_name_field",
-                "max_elevation_threshold", "knn", "multiplier",
+                "max_elevation_threshold", "knn", "multiplier", "sor_passes",
+                "elm_filter", "elm_cell", "elm_threshold",
+                "radius_filter", "radius_filter_radius", "radius_filter_min_count",
             ],
             "Processing": [
                 "fill_gaps", "resolution", "point_density_method",
@@ -204,10 +241,21 @@ class LidarProcessing(App):
                 "val_band_raster", "sample_size",
             ],
             "Advanced Settings": [
-                "overlap", "filter_date", "start_date", "end_date",
+                "overlap", "filter_date", "automatic_date_parser", "start_date", "end_date",
                 "chunk_size", "chunk_overlap", "num_workers",
+                "preprocess_chunk_size", "preprocess_chunk_overlap",
+                "preprocess_reproject_vertical", "preprocess_vertical_target_epsg",
             ],
         }
+
+        represented = {name for names in groups.values() for name in names}
+        represented.update({
+            "create_DSM", "create_DEM", "create_CHM",
+            "run_preprocessing", "run_processing", "run_validation",
+        })
+        remaining = [name for name in vars(self.cfg) if not name.startswith("_") and name not in represented]
+        if remaining:
+            groups["Other Settings"] = remaining
 
         collapsibles: list[Collapsible] = []
         for group_name, var_names in groups.items():
@@ -218,7 +266,7 @@ class LidarProcessing(App):
 
                 # Label
                 name = Static(f"{var_name}:", classes="var-name")
-                name.styles.width = 24
+                name.styles.width = 33
                 name.styles.min_width = 12
                 # Tooltip from inline comments (hover over the label)
                 help_text = self._help_map.get(var_name)
@@ -267,20 +315,21 @@ class LidarProcessing(App):
 
     # ---------- Events: push edits into self.cfg ----------
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        var = (event.input.id or "").removeprefix("edit-")
-        self._set_config_value(var, event.value)
+        if (event.input.id or "").startswith("edit-"):
+            self._set_config_value(event.input.id.removeprefix("edit-"), event.value)
 
     def on_input_blurred(self, event: Input.Blurred) -> None:
-        var = (event.input.id or "").removeprefix("edit-")
-        self._set_config_value(var, event.input.value)
+        if (event.input.id or "").startswith("edit-"):
+            self._set_config_value(event.input.id.removeprefix("edit-"), event.input.value)
 
     def on_select_changed(self, event: Select.Changed) -> None:
         var = (event.select.id or "").removeprefix("edit-")
-        self._set_config_value(var, event.value)
+        if event.select.value is not Select.BLANK:
+            self._set_config_value(var, event.select.value)
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         var = (event.checkbox.id or "").removeprefix("edit-")
-        self._set_config_value(var, event.value)
+        self._set_config_value(var, event.checkbox.value)
 
     # ---------- Action & product buttons ----------
     def _make_action_button(self, btn_id: str, label: str, active: bool) -> Button:
@@ -327,6 +376,10 @@ class LidarProcessing(App):
             self._toggle_product(btn, "create_DEM")
         elif btn.id == "btn-prod-chm":
             self._toggle_product(btn, "create_CHM")
+        elif btn.id == "btn-save":
+            self._request_save()
+        elif btn.id == "btn-load":
+            self._load_config()
         # Run button
         elif btn.id == "btn-run":
             self._start_run()
@@ -355,11 +408,136 @@ class LidarProcessing(App):
         btn.variant = "primary" if new_val else "default"
         print(f"Product {cfg_attr} -> {new_val}\n")
 
+    def _config_path(self) -> Path:
+        text = self.query_one("#config-file", Input).value.strip()
+        if not text:
+            raise ValueError("Enter a JSON configuration file path.")
+        path = Path(text).expanduser()
+        if path.suffix.lower() != ".json":
+            raise ValueError("The configuration file must have a .json extension.")
+        return path
+
+    def _sync_inputs(self) -> bool:
+        for editor in self.query("Input.var-editor"):
+            self._set_config_value((editor.id or "").removeprefix("edit-"), editor.value)
+        if self._invalid_inputs:
+            print(f"[CONFIG ERROR] Correct invalid values: {', '.join(sorted(self._invalid_inputs))}\n")
+            return False
+        return True
+
+    def _request_save(self) -> None:
+        if self._runner and self._runner.is_alive():
+            print("[CONFIG ERROR] Cannot save while a run is in progress.\n")
+            return
+        if not self._sync_inputs():
+            return
+        try:
+            path = self._config_path()
+            payload = json.dumps(
+                {"version": 1, "settings": {name: getattr(self.cfg, name) for name in self._config_types}},
+                indent=2, allow_nan=False,
+            ) + "\n"
+            if path.exists():
+                self.push_screen(ConfirmOverwrite(path), lambda confirmed: self._write_config(path, payload, True) if confirmed else None)
+            else:
+                self._write_config(path, payload, False)
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"[CONFIG ERROR] Could not save configuration: {exc}\n")
+
+    def _write_config(self, path: Path, payload: str, overwrite: bool) -> None:
+        temporary = None
+        try:
+            if self._runner and self._runner.is_alive():
+                raise ValueError("Cannot save while a run is in progress.")
+            if overwrite:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+                    temporary = Path(file.name)
+                    file.write(payload)
+                os.replace(temporary, path)
+                temporary = None
+            else:
+                with path.open("x", encoding="utf-8") as file:
+                    file.write(payload)
+            print(f"Configuration saved to {path}\n")
+        except (OSError, ValueError) as exc:
+            print(f"[CONFIG ERROR] Could not save configuration: {exc}\n")
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError as exc:
+                    print(f"[CONFIG ERROR] Could not remove temporary file {temporary}: {exc}\n")
+
+    def _load_config(self) -> None:
+        if self._runner and self._runner.is_alive():
+            print("[CONFIG ERROR] Cannot load while a run is in progress.\n")
+            return
+        try:
+            path = self._config_path()
+            with path.open(encoding="utf-8") as file:
+                document = json.load(file)
+            if not isinstance(document, dict) or type(document.get("version")) is not int or document["version"] != 1:
+                raise ValueError("Unsupported or missing configuration version.")
+            settings = document.get("settings")
+            if not isinstance(settings, dict):
+                raise ValueError("Configuration settings must be an object.")
+            unknown = settings.keys() - self._config_types.keys()
+            if unknown:
+                raise ValueError(f"Unknown settings: {', '.join(sorted(unknown))}")
+            for name, value in settings.items():
+                expected = self._config_types[name]
+                valid = type(value) is expected
+                if expected is float:
+                    valid = type(value) in (int, float) and math.isfinite(value)
+                elif name == "resolution":
+                    valid = (type(value) in (int, float) and math.isfinite(value)) or value == "Auto"
+                if not valid:
+                    raise ValueError(f"Invalid value for {name}: {value!r}")
+
+            for name, value in settings.items():
+                setattr(self.cfg, name, value)
+            self._invalid_inputs.clear()
+            self._refresh_config_controls()
+            missing = self._config_types.keys() - settings.keys()
+            if missing:
+                print(f"Configuration kept current values for missing settings: {', '.join(sorted(missing))}\n")
+            print(f"Configuration loaded from {path}\n")
+        except (OSError, ValueError, TypeError, OverflowError) as exc:
+            print(f"[CONFIG ERROR] Could not load configuration: {exc}\n")
+
+    def _refresh_config_controls(self) -> None:
+        for editor in self.query(".var-editor"):
+            name = (editor.id or "").removeprefix("edit-")
+            value = getattr(self.cfg, name)
+            if isinstance(editor, Input):
+                editor.value = str(value)
+            elif isinstance(editor, Checkbox):
+                editor.value = value
+            elif isinstance(editor, Select):
+                options = self.OPTIONS[name]
+                if value not in options:
+                    options = [value, *options]
+                editor.set_options([(option, option) for option in options])
+                editor.value = value
+        for btn_id, name in [
+            ("btn-preprocess", "run_preprocessing"),
+            ("btn-process", "run_processing"),
+            ("btn-validate", "run_validation"),
+        ]:
+            button = self.query_one(f"#{btn_id}", Button)
+            active = getattr(self.cfg, name)
+            button.variant = "primary" if active else "default"
+            button.set_class(not active, "as-disabled")
+        self._update_products_enabled()
+
     # ---------- Run pipeline ----------
     def _start_run(self) -> None:
         # Already running?
         if self._runner and self._runner.is_alive():
             print("A run is already in progress.\n")
+            return
+
+        if not self._sync_inputs():
             return
 
         # Update button UI
@@ -461,41 +639,34 @@ class LidarProcessing(App):
             setattr(self.cfg, var_name, str(raw_value))
             return
 
-        current = getattr(self.cfg, var_name)
-
-        if var_name == "resolution":
-            if isinstance(raw_value, str) and raw_value.strip().lower() == "auto":
-                setattr(self.cfg, var_name, "Auto")
-                return
-            try:
-                v = raw_value.strip() if isinstance(raw_value, str) else raw_value
-                setattr(self.cfg, var_name, int(v))
-            except Exception:
-                try:
-                    setattr(self.cfg, var_name, float(v))  # type: ignore[name-defined]
-                except Exception:
-                    setattr(self.cfg, var_name, str(raw_value))
+        value_type = self._config_types[var_name]
+        try:
+            if var_name == "resolution":
+                text = str(raw_value).strip()
+                if text.lower() == "auto":
+                    value = "Auto"
+                else:
+                    try:
+                        value = int(text)
+                    except ValueError:
+                        value = float(text)
+            elif value_type is bool:
+                value = bool(raw_value)
+            elif value_type is int:
+                value = int(str(raw_value).strip())
+            elif value_type is float:
+                value = float(str(raw_value).strip())
+            else:
+                value = str(raw_value)
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("Non-finite number")
+        except ValueError:
+            self._invalid_inputs.add(var_name)
+            print(f"[CONFIG ERROR] Invalid value for {var_name}: {raw_value!r}\n")
             return
 
-        if isinstance(current, bool):
-            setattr(self.cfg, var_name, bool(raw_value))
-            return
-
-        if isinstance(current, int) and not isinstance(current, bool):
-            try:
-                setattr(self.cfg, var_name, int(str(raw_value).strip()))
-            except Exception:
-                setattr(self.cfg, var_name, str(raw_value))
-            return
-
-        if isinstance(current, float):
-            try:
-                setattr(self.cfg, var_name, float(str(raw_value).strip()))
-            except Exception:
-                setattr(self.cfg, var_name, str(raw_value))
-            return
-
-        setattr(self.cfg, var_name, str(raw_value))
+        self._invalid_inputs.discard(var_name)
+        setattr(self.cfg, var_name, value)
 
     # ---------- RAM polling ----------
     def _update_ram(self) -> None:

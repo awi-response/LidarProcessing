@@ -201,7 +201,31 @@ def extract_footprint_batch(input_folder, output_folder):
         print("No LAS/LAZ files found in the input directory. Exiting.")
         return
 
-    for laz_file in tqdm(laz_files, desc="Processing footprints", unit="file"):
+    valid_files = []
+    invalid_files = []
+    for laz_file in laz_files:
+        try:
+            with open(laz_file, "rb") as fh:
+                signature = fh.read(4)
+            if signature == b"LASF":
+                valid_files.append(laz_file)
+            else:
+                invalid_files.append((laz_file, signature))
+        except OSError as e:
+            print(f"Warning: Unable to read {laz_file}: {e}")
+
+    if invalid_files:
+        print(f"Skipped {len(invalid_files)} file(s) that are not valid LAS/LAZ containers (missing LASF signature).")
+        for path, signature in invalid_files[:10]:
+            print(f"  - {path}: signature={signature!r}")
+        if len(invalid_files) > 10:
+            print(f"  ... and {len(invalid_files) - 10} more")
+
+    if not valid_files:
+        print("No valid LAS/LAZ files available for footprint extraction. Exiting.")
+        return
+
+    for laz_file in tqdm(valid_files, desc="Processing footprints", unit="file"):
         try:
             with laspy.open(laz_file) as file:
                 point_cloud = file.read()
